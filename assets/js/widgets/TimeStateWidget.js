@@ -30,10 +30,6 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId }) => {
     const [itemSuggestions, setItemSuggestions] = useState([]);
     const [itemsLoading, setItemsLoading] = useState(false);
 
-    const apiUrl = (window.ZABBIX_CONFIG && window.ZABBIX_CONFIG.api_url)
-        ? window.ZABBIX_CONFIG.api_url
-        : 'modules/react-dashboard/api.php';
-
     const parseCsvIds = (raw) => String(raw || '')
         .split(/[\s,]+/)
         .map((v) => v.trim())
@@ -42,6 +38,60 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId }) => {
     const selectedHostIds = useMemo(() => new Set(parseCsvIds(cfg.hostidsCsv)), [cfg.hostidsCsv]);
     const selectedItemIds = useMemo(() => new Set(parseCsvIds(cfg.itemidsCsv)), [cfg.itemidsCsv]);
 
+    const apiCandidates = useMemo(() => {
+        const zbxConfig = window.ZABBIX_CONFIG || {};
+        return Array.from(new Set([
+            zbxConfig.api_url,
+            zbxConfig.api_fallback_url,
+            'modules/react-dashboard/modules/react-dashboard/api.php',
+            'modules/react-dashboard/api.php'
+        ].filter(Boolean)));
+    }, []);
+
+    const requestJson = useCallback(async (paramsInput) => {
+        const params = paramsInput instanceof URLSearchParams
+            ? paramsInput
+            : new URLSearchParams(paramsInput);
+
+        let lastError = null;
+
+        for (const base of apiCandidates) {
+            const url = `${base}?${params.toString()}`;
+            try {
+                const response = await fetch(url, {
+                    headers: {
+                        Accept: 'application/json'
+                    }
+                });
+
+                const text = await response.text();
+                let payload = null;
+
+                try {
+                    payload = JSON.parse(text);
+                }
+                catch (_parseError) {
+                    throw new Error(`API response is geen JSON (${base}). Eerste bytes: ${text.slice(0, 80)}`);
+                }
+
+                if (!response.ok) {
+                    throw new Error((payload && payload.error) ? payload.error : `HTTP ${response.status}`);
+                }
+
+                if (payload && typeof payload === 'object' && payload.error) {
+                    throw new Error(payload.error);
+                }
+
+                return payload;
+            }
+            catch (requestError) {
+                lastError = requestError;
+            }
+        }
+
+        throw (lastError || new Error('API request failed'));
+    }, [apiCandidates]);
+
     const refreshMs = useMemo(() => {
         const sec = Number(cfg.refreshSec) || 30;
         return Math.max(5, Math.min(3600, sec)) * 1000;
@@ -49,29 +99,28 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId }) => {
 
     const fetchGroups = useCallback(async () => {
         try {
-            const response = await fetch(`${apiUrl}?action_type=get_groups`);
-            const payload = await response.json();
+            const payload = await requestJson({ action_type: 'get_groups' });
             setGroups(Array.isArray(payload) ? payload : []);
         }
         catch (_err) {
             setGroups([]);
         }
-    }, [apiUrl]);
+    }, [requestJson]);
 
     const fetchHosts = useCallback(async (groupid) => {
         if (!groupid) {
             setHosts([]);
             return;
         }
+
         try {
-            const response = await fetch(`${apiUrl}?action_type=get_hosts_by_group&groupid=${encodeURIComponent(groupid)}`);
-            const payload = await response.json();
+            const payload = await requestJson({ action_type: 'get_hosts_by_group', groupid });
             setHosts(Array.isArray(payload) ? payload : []);
         }
         catch (_err) {
             setHosts([]);
         }
-    }, [apiUrl]);
+    }, [requestJson]);
 
     const fetchItemSuggestions = useCallback(async () => {
         if (!cfg.hostidsCsv) {
@@ -81,7 +130,7 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId }) => {
 
         setItemsLoading(true);
         try {
-            const params = new URLSearchParams({
+            const payload = await requestJson({
                 action_type: 'timestate_items',
                 hostids_csv: String(cfg.hostidsCsv || ''),
                 item_key_search: String(cfg.itemKeySearch || ''),
@@ -89,8 +138,6 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId }) => {
                 max_rows: String(Math.max(1, Number(cfg.maxRows || 20)))
             });
 
-            const response = await fetch(`${apiUrl}?${params.toString()}`);
-            const payload = await response.json();
             setItemSuggestions(Array.isArray(payload.items) ? payload.items : []);
         }
         catch (_err) {
@@ -99,14 +146,14 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId }) => {
         finally {
             setItemsLoading(false);
         }
-    }, [apiUrl, cfg.hostidsCsv, cfg.itemKeySearch, cfg.itemNameSearch, cfg.maxRows]);
+    }, [requestJson, cfg.hostidsCsv, cfg.itemKeySearch, cfg.itemNameSearch, cfg.maxRows]);
 
     const fetchData = useCallback(async () => {
         setLoading(true);
         setError('');
 
         try {
-            const params = new URLSearchParams({
+            const payload = await requestJson({
                 action_type: 'timestate_data',
                 hostids_csv: String(cfg.hostidsCsv || ''),
                 itemids_csv: String(cfg.itemidsCsv || ''),
@@ -119,13 +166,6 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId }) => {
                 merge_equal_states: String(cfg.mergeEqual ? 1 : 0),
                 state_map: String(cfg.stateMap || '')
             });
-
-            const response = await fetch(`${apiUrl}?${params.toString()}`);
-            const payload = await response.json();
-
-            if (!response.ok || payload.error) {
-                throw new Error(payload.error || 'Unable to load timeline data.');
-            }
 
             setModel({
                 rows: Array.isArray(payload.rows) ? payload.rows : [],
@@ -141,7 +181,7 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId }) => {
             setLoading(false);
         }
     }, [
-        apiUrl,
+        requestJson,
         cfg.hostidsCsv,
         cfg.itemidsCsv,
         cfg.itemKeySearch,
@@ -164,13 +204,31 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId }) => {
     }, [fetchData, refreshMs]);
 
     useEffect(() => {
-        if (editMode) {
-            fetchGroups();
-            if (cfg.groupid) {
-                fetchHosts(cfg.groupid);
-            }
+        if (!editMode) {
+            return;
+        }
+
+        fetchGroups();
+        if (cfg.groupid) {
+            fetchHosts(cfg.groupid);
         }
     }, [editMode, cfg.groupid, fetchGroups, fetchHosts]);
+
+    useEffect(() => {
+        if (!editMode) {
+            return;
+        }
+        if (!cfg.hostidsCsv) {
+            setItemSuggestions([]);
+            return;
+        }
+
+        const timer = setTimeout(() => {
+            fetchItemSuggestions();
+        }, 350);
+
+        return () => clearTimeout(timer);
+    }, [editMode, cfg.hostidsCsv, cfg.itemKeySearch, cfg.itemNameSearch, cfg.maxRows, fetchItemSuggestions]);
 
     const setIdsCsv = (key, idsSet) => {
         const sorted = Array.from(idsSet).sort((a, b) => Number(a) - Number(b));
@@ -185,7 +243,9 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId }) => {
         else {
             next.add(hostid);
         }
-        updateSettings({ hostidsCsv: Array.from(next).sort((a, b) => Number(a) - Number(b)).join(',') });
+
+        const hostidsCsv = Array.from(next).sort((a, b) => Number(a) - Number(b)).join(',');
+        updateSettings({ hostidsCsv, itemidsCsv: '' });
     };
 
     const toggleItem = (itemid) => {
@@ -200,6 +260,12 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId }) => {
     };
 
     const clearItemSelection = () => updateSettings({ itemidsCsv: '' });
+
+    const selectAllFoundItems = () => {
+        const next = new Set(selectedItemIds);
+        itemSuggestions.forEach((item) => next.add(String(item.itemid)));
+        setIdsCsv('itemidsCsv', next);
+    };
 
     const timeFrom = Number(model.time_from || 0);
     const timeTo = Number(model.time_to || 0);
@@ -363,14 +429,15 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId }) => {
                                 <button className="btn-zbx" type="button" onClick={fetchItemSuggestions}>
                                     {itemsLoading ? 'Searching...' : 'Search'}
                                 </button>
-                                <button className="btn-zbx" type="button" onClick={clearItemSelection}>Clear selected items</button>
+                                <button className="btn-zbx" type="button" onClick={selectAllFoundItems} disabled={itemSuggestions.length === 0}>Select all found</button>
+                                <button className="btn-zbx" type="button" onClick={clearItemSelection}>Clear selected</button>
                                 <span className="editor-subtle">Selected: {selectedItemIds.size}</span>
                             </div>
 
                             <div className="editor-label">Item matches</div>
                             <div className="editor-control">
                                 <div className="editor-item-list">
-                                    {itemSuggestions.length === 0 && <div className="editor-subtle">Run search to list matching items.</div>}
+                                    {itemSuggestions.length === 0 && <div className="editor-subtle">Type filter and wait, or click Search.</div>}
                                     {itemSuggestions.map((item) => (
                                         <label key={item.itemid} className="editor-item-entry">
                                             <input

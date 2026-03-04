@@ -480,7 +480,8 @@ $page->show();
 
 <script>
     window.ZABBIX_CONFIG = {
-        api_url: 'modules/react-dashboard/api.php'
+        api_url: 'modules/react-dashboard/modules/react-dashboard/api.php',
+        api_fallback_url: 'modules/react-dashboard/api.php'
     };
 </script>
 
