@@ -67,38 +67,47 @@ $page->show();
     }
 
     .btn-remove {
-        border: 0;
-        background: rgba(255,255,255,0.15);
+        border: 1px solid rgba(255,255,255,0.2);
+        background: rgba(0,0,0,0.18);
         color: #ffffff;
         width: 26px;
         height: 26px;
-        border-radius: 8px;
+        border-radius: 3px;
         cursor: pointer;
         font-size: 14px;
         line-height: 1;
-        transition: background 0.2s ease, transform 0.2s ease;
+        transition: background 0.2s ease;
     }
 
     .btn-remove:hover {
-        background: rgba(255,255,255,0.3);
-        transform: translateY(-1px);
+        background: rgba(0,0,0,0.3);
+    }
+
+    .btn-edit {
+        border: 1px solid rgba(255,255,255,0.2);
+        background: rgba(0,0,0,0.18);
+        color: #ffffff;
+        height: 26px;
+        padding: 0 10px;
+        border-radius: 3px;
+        cursor: pointer;
+        font-size: 12px;
+    }
+
+    .btn-edit:hover {
+        background: rgba(0,0,0,0.3);
     }
 
     .widget-card--clock {
-        border: 1px solid rgba(255,255,255,0.12);
-        border-radius: 16px;
-        box-shadow:
-            0 12px 32px rgba(0,0,0,<?php echo $is_dark ? '0.45' : '0.16'; ?>),
-            inset 0 1px 0 rgba(255,255,255,0.08);
-        background:
-            radial-gradient(circle at 12% 14%, rgba(255,255,255,0.14), transparent 42%),
-            linear-gradient(160deg, <?php echo $is_dark ? '#1f2937' : '#f8fbff'; ?>, <?php echo $is_dark ? '#0f172a' : '#e8eef7'; ?>);
+        border-radius: 4px;
+        border: 1px solid var(--border-color);
+        background: var(--card-bg);
+        box-shadow: 0 4px 6px rgba(0,0,0,<?php echo $is_dark ? '0.4' : '0.1'; ?>);
     }
 
     .widget-header--clock {
-        background: linear-gradient(90deg, rgba(15,23,42,0.85), rgba(31,41,55,0.65));
-        backdrop-filter: blur(6px);
-        border-bottom: 1px solid rgba(255,255,255,0.1);
+        background: var(--header-bg);
+        border-bottom: 1px solid rgba(255,255,255,0.08);
     }
 
     .clock-actions {
@@ -107,56 +116,37 @@ $page->show();
         gap: 8px;
     }
 
-    .clock-mode-toggle {
-        display: inline-flex;
-        border: 1px solid rgba(255,255,255,0.26);
-        border-radius: 999px;
-        padding: 2px;
-        background: rgba(0,0,0,0.22);
-    }
-
-    .clock-mode-btn {
-        border: 0;
-        background: transparent;
-        color: rgba(255,255,255,0.78);
-        padding: 5px 11px;
-        border-radius: 999px;
-        font-size: 11px;
-        font-weight: 600;
-        cursor: pointer;
-        letter-spacing: 0.03em;
-    }
-
-    .clock-mode-btn.is-active {
-        background: rgba(255,255,255,0.18);
-        color: #ffffff;
-    }
-
     .widget-body--clock {
-        padding: 20px 16px;
+        padding: 14px;
     }
 
     .clock-digital {
         width: 100%;
-        color: #ffffff;
-        text-shadow: 0 3px 12px rgba(0,0,0,0.3);
+        color: var(--text-color);
     }
 
     .clock-time {
-        font-size: clamp(32px, 5vw, 50px);
+        font-size: clamp(32px, 5vw, 46px);
         line-height: 1.05;
         font-weight: 700;
-        letter-spacing: 0.04em;
+        letter-spacing: 0.03em;
         font-variant-numeric: tabular-nums;
     }
 
     .clock-date {
         margin-top: 10px;
-        font-size: 13px;
-        letter-spacing: 0.07em;
+        font-size: 12px;
+        letter-spacing: 0.05em;
         text-transform: uppercase;
-        color: rgba(255,255,255,0.82);
-        font-weight: 600;
+        color: <?php echo $is_dark ? '#c7ced6' : '#647481'; ?>;
+        font-weight: 700;
+    }
+
+    .clock-timezone {
+        margin-top: 6px;
+        font-size: 11px;
+        color: <?php echo $is_dark ? '#9da9b5' : '#7f8d98'; ?>;
+        font-family: monospace;
     }
 
     .clock-analog-wrap {
@@ -173,13 +163,9 @@ $page->show();
         width: min(200px, 72%);
         aspect-ratio: 1 / 1;
         border-radius: 50%;
-        border: 2px solid rgba(255,255,255,0.4);
-        background:
-            radial-gradient(circle at 30% 28%, rgba(255,255,255,0.32), rgba(255,255,255,0.06) 48%, rgba(0,0,0,0.2) 100%),
-            linear-gradient(145deg, rgba(255,255,255,0.2), rgba(255,255,255,0.03));
-        box-shadow:
-            inset 0 1px 20px rgba(255,255,255,0.06),
-            0 12px 28px rgba(0,0,0,0.35);
+        border: 2px solid <?php echo $is_dark ? '#6f7b87' : '#b8c3cc'; ?>;
+        background: <?php echo $is_dark ? '#2f363d' : '#f4f7fa'; ?>;
+        box-shadow: inset 0 0 0 1px <?php echo $is_dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)'; ?>;
     }
 
     .clock-hand {
@@ -191,21 +177,21 @@ $page->show();
     }
 
     .clock-hand--hour {
-        width: 6px;
+        width: 5px;
         height: 28%;
-        background: #ffffff;
+        background: <?php echo $is_dark ? '#f2f2f2' : '#2f3e4a'; ?>;
     }
 
     .clock-hand--minute {
-        width: 4px;
+        width: 3px;
         height: 36%;
-        background: #e2e8f0;
+        background: <?php echo $is_dark ? '#d6dee6' : '#496072'; ?>;
     }
 
     .clock-hand--second {
         width: 2px;
         height: 40%;
-        background: #f87171;
+        background: #b34b4b;
     }
 
     .clock-center-dot {
@@ -215,7 +201,7 @@ $page->show();
         width: 10px;
         height: 10px;
         border-radius: 50%;
-        background: #f8fafc;
+        background: <?php echo $is_dark ? '#f8fafc' : '#344455'; ?>;
         transform: translate(-50%, -50%);
     }
 
@@ -225,14 +211,79 @@ $page->show();
         left: 50%;
         width: 2px;
         height: 8%;
-        background: rgba(255,255,255,0.55);
+        background: <?php echo $is_dark ? 'rgba(229,236,242,0.7)' : 'rgba(58,74,89,0.55)'; ?>;
         transform-origin: 50% calc(50% + 42%);
     }
 
     .clock-tick--major {
         height: 10%;
         width: 3px;
-        background: rgba(255,255,255,0.88);
+        background: <?php echo $is_dark ? '#edf2f7' : '#2f3f4f'; ?>;
+    }
+
+    .clock-editor {
+        width: 100%;
+        text-align: left;
+        color: var(--text-color);
+    }
+
+    .clock-editor-row {
+        margin-bottom: 14px;
+    }
+
+    .clock-editor-label {
+        font-size: 12px;
+        color: <?php echo $is_dark ? '#c7ced6' : '#5f6e79'; ?>;
+        margin-bottom: 6px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+
+    .clock-editor-controls {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    .clock-option-btn {
+        border: 1px solid var(--border-color);
+        border-radius: 3px;
+        background: <?php echo $is_dark ? '#424a53' : '#f5f8fa'; ?>;
+        color: var(--text-color);
+        font-size: 12px;
+        padding: 6px 10px;
+        cursor: pointer;
+    }
+
+    .clock-option-btn.is-active {
+        border-color: <?php echo $is_dark ? '#8ea0b2' : '#4b667c'; ?>;
+        background: <?php echo $is_dark ? '#5a6673' : '#dce8f1'; ?>;
+    }
+
+    .clock-timezone-select {
+        width: 100%;
+        max-width: 260px;
+        border: 1px solid var(--border-color);
+        border-radius: 3px;
+        padding: 6px 8px;
+        background: <?php echo $is_dark ? '#424a53' : '#ffffff'; ?>;
+        color: var(--text-color);
+    }
+
+    .clock-editor-footer {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 8px;
+    }
+
+    .clock-done-btn {
+        border: 1px solid var(--border-color);
+        border-radius: 3px;
+        padding: 6px 12px;
+        cursor: pointer;
+        background: <?php echo $is_dark ? '#4d5965' : '#edf2f6'; ?>;
+        color: var(--text-color);
     }
 
     /* FIX VOOR HET "VUIL" (de resize handles) */

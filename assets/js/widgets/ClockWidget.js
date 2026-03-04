@@ -1,10 +1,40 @@
 window.ClockWidget = ({ remove, widgetId }) => {
+    const DEFAULT_SETTINGS = {
+        mode: 'digital',
+        hourFormat: '24',
+        timezone: '__local__'
+    };
+    const TIMEZONE_OPTIONS = [
+        { value: '__local__', label: 'Browser local' },
+        { value: 'UTC', label: 'UTC' },
+        { value: 'Europe/Brussels', label: 'Europe/Brussels' },
+        { value: 'Europe/Amsterdam', label: 'Europe/Amsterdam' },
+        { value: 'Europe/London', label: 'Europe/London' },
+        { value: 'America/New_York', label: 'America/New_York' },
+        { value: 'America/Chicago', label: 'America/Chicago' },
+        { value: 'America/Denver', label: 'America/Denver' },
+        { value: 'America/Los_Angeles', label: 'America/Los_Angeles' },
+        { value: 'Asia/Tokyo', label: 'Asia/Tokyo' }
+    ];
+
     const [now, setNow] = React.useState(new Date());
-    const [mode, setMode] = React.useState(() => {
+    const [isEditing, setIsEditing] = React.useState(false);
+    const [settings, setSettings] = React.useState(() => {
         if (!widgetId) {
-            return 'digital';
+            return DEFAULT_SETTINGS;
         }
-        return localStorage.getItem(`zbx_clock_mode_${widgetId}`) || 'digital';
+
+        try {
+            const raw = localStorage.getItem(`zbx_clock_settings_${widgetId}`);
+            if (!raw) {
+                return DEFAULT_SETTINGS;
+            }
+            const parsed = JSON.parse(raw);
+            return { ...DEFAULT_SETTINGS, ...parsed };
+        }
+        catch (error) {
+            return DEFAULT_SETTINGS;
+        }
     });
 
     React.useEffect(() => {
@@ -14,13 +44,45 @@ window.ClockWidget = ({ remove, widgetId }) => {
 
     React.useEffect(() => {
         if (widgetId) {
-            localStorage.setItem(`zbx_clock_mode_${widgetId}`, mode);
+            localStorage.setItem(`zbx_clock_settings_${widgetId}`, JSON.stringify(settings));
         }
-    }, [mode, widgetId]);
+    }, [settings, widgetId]);
 
-    const hour = now.getHours();
-    const minute = now.getMinutes();
-    const second = now.getSeconds();
+    const resolvedTimezone = React.useMemo(() => {
+        if (settings.timezone === '__local__') {
+            return Intl.DateTimeFormat().resolvedOptions().timeZone;
+        }
+        try {
+            new Intl.DateTimeFormat([], { timeZone: settings.timezone }).format(now);
+            return settings.timezone;
+        }
+        catch (error) {
+            return Intl.DateTimeFormat().resolvedOptions().timeZone;
+        }
+    }, [settings.timezone, now]);
+
+    const timeParts = React.useMemo(() => {
+        const parts = new Intl.DateTimeFormat('en-GB', {
+            timeZone: resolvedTimezone,
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hourCycle: 'h23'
+        }).formatToParts(now);
+        const valueByType = parts.reduce((acc, part) => {
+            acc[part.type] = part.value;
+            return acc;
+        }, {});
+        return {
+            hour: Number(valueByType.hour || 0),
+            minute: Number(valueByType.minute || 0),
+            second: Number(valueByType.second || 0)
+        };
+    }, [now, resolvedTimezone]);
+
+    const hour = timeParts.hour;
+    const minute = timeParts.minute;
+    const second = timeParts.second;
 
     const hourDegrees = (hour % 12) * 30 + minute * 0.5;
     const minuteDegrees = minute * 6 + second * 0.1;
@@ -28,18 +90,122 @@ window.ClockWidget = ({ remove, widgetId }) => {
     const handTransform = (deg) => ({ transform: `translateX(-50%) rotate(${deg}deg)` });
     const tickTransform = (deg) => ({ transform: `translateX(-50%) rotate(${deg}deg)` });
 
-    const digitalTime = now.toLocaleTimeString([], {
+    const digitalTime = new Intl.DateTimeFormat([], {
+        timeZone: resolvedTimezone,
         hour: '2-digit',
         minute: '2-digit',
-        second: '2-digit'
-    });
+        second: '2-digit',
+        hour12: settings.hourFormat === '12'
+    }).format(now);
 
-    const digitalDate = now.toLocaleDateString([], {
+    const digitalDate = new Intl.DateTimeFormat([], {
+        timeZone: resolvedTimezone,
         weekday: 'short',
         day: '2-digit',
         month: 'short',
         year: 'numeric'
-    });
+    }).format(now);
+
+    const timezoneLabel = settings.timezone === '__local__'
+        ? `Local (${resolvedTimezone})`
+        : settings.timezone;
+
+    const updateSetting = (key, value) => {
+        setSettings((prev) => ({ ...prev, [key]: value }));
+    };
+
+    const renderClock = () => {
+        if (settings.mode === 'digital') {
+            return (
+                <div className="clock-digital">
+                    <div className="clock-time">{digitalTime}</div>
+                    <div className="clock-date">{digitalDate}</div>
+                    <div className="clock-timezone">{timezoneLabel}</div>
+                </div>
+            );
+        }
+
+        return (
+            <div className="clock-analog-wrap">
+                <div className="clock-analog" aria-label={digitalTime}>
+                    <div className="clock-hand clock-hand--hour" style={handTransform(hourDegrees)} />
+                    <div className="clock-hand clock-hand--minute" style={handTransform(minuteDegrees)} />
+                    <div className="clock-hand clock-hand--second" style={handTransform(secondDegrees)} />
+                    <div className="clock-center-dot" />
+                    {[...Array(12)].map((_, idx) => (
+                        <div
+                            key={idx}
+                            className={`clock-tick ${idx % 3 === 0 ? 'clock-tick--major' : ''}`}
+                            style={tickTransform(idx * 30)}
+                        />
+                    ))}
+                </div>
+                <div className="clock-date">{digitalDate}</div>
+                <div className="clock-timezone">{timezoneLabel}</div>
+            </div>
+        );
+    };
+
+    const renderEditor = () => (
+        <div className="clock-editor">
+            <div className="clock-editor-row">
+                <div className="clock-editor-label">Look</div>
+                <div className="clock-editor-controls">
+                    <button
+                        className={`clock-option-btn ${settings.mode === 'digital' ? 'is-active' : ''}`}
+                        onClick={() => updateSetting('mode', 'digital')}
+                    >
+                        Digitaal
+                    </button>
+                    <button
+                        className={`clock-option-btn ${settings.mode === 'analog' ? 'is-active' : ''}`}
+                        onClick={() => updateSetting('mode', 'analog')}
+                    >
+                        Analoog
+                    </button>
+                </div>
+            </div>
+
+            <div className="clock-editor-row">
+                <div className="clock-editor-label">Tijdsformaat</div>
+                <div className="clock-editor-controls">
+                    <button
+                        className={`clock-option-btn ${settings.hourFormat === '24' ? 'is-active' : ''}`}
+                        onClick={() => updateSetting('hourFormat', '24')}
+                    >
+                        24 uur
+                    </button>
+                    <button
+                        className={`clock-option-btn ${settings.hourFormat === '12' ? 'is-active' : ''}`}
+                        onClick={() => updateSetting('hourFormat', '12')}
+                    >
+                        12 uur
+                    </button>
+                </div>
+            </div>
+
+            <div className="clock-editor-row">
+                <div className="clock-editor-label">Timezone</div>
+                <div className="clock-editor-controls">
+                    <select
+                        className="clock-timezone-select"
+                        value={settings.timezone}
+                        onChange={(e) => updateSetting('timezone', e.target.value)}
+                    >
+                        {TIMEZONE_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                                {option.label}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+            </div>
+
+            <div className="clock-editor-footer">
+                <button className="clock-done-btn" onClick={() => setIsEditing(false)}>Klaar</button>
+            </div>
+        </div>
+    );
 
     return (
         <div className="widget-card widget-card--clock">
@@ -47,53 +213,15 @@ window.ClockWidget = ({ remove, widgetId }) => {
                 <span className="widget-title">SYSTEM TIME</span>
 
                 <div className="clock-actions">
-                    <div className="clock-mode-toggle" role="tablist" aria-label="Clock view">
-                        <button
-                            className={`clock-mode-btn ${mode === 'digital' ? 'is-active' : ''}`}
-                            onClick={() => setMode('digital')}
-                            role="tab"
-                            aria-selected={mode === 'digital'}
-                        >
-                            Digital
-                        </button>
-                        <button
-                            className={`clock-mode-btn ${mode === 'analog' ? 'is-active' : ''}`}
-                            onClick={() => setMode('analog')}
-                            role="tab"
-                            aria-selected={mode === 'analog'}
-                        >
-                            Analog
-                        </button>
-                    </div>
-
+                    <button className="btn-edit" onClick={() => setIsEditing((v) => !v)}>
+                        {isEditing ? 'Close' : 'Edit'}
+                    </button>
                     <button className="btn-remove" onClick={remove}>✕</button>
                 </div>
             </div>
 
             <div className="widget-body widget-body--clock">
-                {mode === 'digital' ? (
-                    <div className="clock-digital">
-                        <div className="clock-time">{digitalTime}</div>
-                        <div className="clock-date">{digitalDate}</div>
-                    </div>
-                ) : (
-                    <div className="clock-analog-wrap">
-                        <div className="clock-analog" aria-label={digitalTime}>
-                            <div className="clock-hand clock-hand--hour" style={handTransform(hourDegrees)} />
-                            <div className="clock-hand clock-hand--minute" style={handTransform(minuteDegrees)} />
-                            <div className="clock-hand clock-hand--second" style={handTransform(secondDegrees)} />
-                            <div className="clock-center-dot" />
-                            {[...Array(12)].map((_, idx) => (
-                                <div
-                                    key={idx}
-                                    className={`clock-tick ${idx % 3 === 0 ? 'clock-tick--major' : ''}`}
-                                    style={tickTransform(idx * 30)}
-                                />
-                            ))}
-                        </div>
-                        <div className="clock-date">{digitalDate}</div>
-                    </div>
-                )}
+                {isEditing ? renderEditor() : renderClock()}
             </div>
         </div>
     );
