@@ -469,7 +469,8 @@ $page->show();
         const m = Number(parts.minute || 0);
         const s = Number(parts.second || 0);
 
-        const analogSize = clamp(Math.min(bodySize.width - 30, bodySize.height - 54), 84, 560);
+        const analogBaseSize = clamp(Math.min(bodySize.width - 30, bodySize.height - 54), 84, 560);
+        const analogSize = Math.round(analogBaseSize * 0.8);
         const digitalTimeSize = Math.round(clamp(Math.min(bodySize.width * 0.2, bodySize.height * 0.35), 20, 100));
         const dateSize = Math.round(clamp(digitalTimeSize * 0.28 * (cfg.dateSize / 100), 9, 42));
 
