@@ -164,7 +164,6 @@ $page->show();
         position: absolute;
         left: 50%;
         top: 50%;
-        transform-origin: center calc(var(--clock-size) * -0.44);
         width: max(1px, calc(var(--clock-size) * 0.010));
         height: calc(var(--clock-size) * 0.06);
         background: #2e2e2e;
@@ -496,13 +495,18 @@ $page->show();
         const renderAnalog = () => (
             <div className="clock-view" style={viewStyle}>
                 <div className="clock-face" style={faceStyle}>
-                    {[...Array(12)].map((_, i) => (
-                        <div
-                            key={`tick-${i}`}
-                            className={`clock-tick ${i % 3 === 0 ? 'major' : ''}`}
-                            style={{ transform: `translate(-50%, -50%) rotate(${i * 30}deg)` }}
-                        />
-                    ))}
+                    {[...Array(12)].map((_, i) => {
+                        const angle = i * 30;
+                        const tx = Math.sin(angle * Math.PI / 180) * analogSize * 0.44;
+                        const ty = -Math.cos(angle * Math.PI / 180) * analogSize * 0.44;
+                        return (
+                            <div
+                                key={`tick-${i}`}
+                                className={`clock-tick ${i % 3 === 0 ? 'major' : ''}`}
+                                style={{ transform: `translate(-50%, -50%) translate(${tx}px, ${ty}px) rotate(${angle}deg)` }}
+                            />
+                        );
+                    })}
                     {[...Array(12)].map((_, i) => {
                         const angle = i * 30;
                         const nx = Math.sin(angle * Math.PI / 180) * analogSize * 0.34;
