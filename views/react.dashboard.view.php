@@ -275,6 +275,19 @@ $page->show();
         font-size: 12px;
     }
 
+    .editor-control .editor-textarea {
+        width: 100%;
+        box-sizing: border-box;
+        border: 1px solid var(--border-color);
+        background: var(--input-bg);
+        color: var(--text-color);
+        border-radius: 2px;
+        padding: 6px 8px;
+        resize: vertical;
+        min-height: 62px;
+        font-size: 12px;
+    }
+
     .editor-segment {
         display: inline-flex;
         border: 1px solid var(--border-color);
@@ -338,10 +351,108 @@ $page->show();
         border-color: <?php echo $is_dark ? '#687f96' : '#8ea6b8'; ?>;
     }
 
+    .widget-body--timestate {
+        justify-content: stretch;
+        align-items: stretch;
+    }
+
+    .timestate-root {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        min-height: 0;
+    }
+
+    .timestate-table {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding-right: 4px;
+    }
+
+    .timestate-row {
+        display: grid;
+        grid-template-columns: minmax(160px, 260px) 1fr;
+        gap: 8px;
+        align-items: center;
+        min-height: 24px;
+    }
+
+    .timestate-label {
+        font-size: 11px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        color: var(--subtle-text);
+    }
+
+    .timestate-lane {
+        position: relative;
+        height: 22px;
+        border: 1px solid var(--border-color);
+        border-radius: 2px;
+        background: <?php echo $is_dark ? '#2a2f35' : '#f3f6f8'; ?>;
+        overflow: hidden;
+    }
+
+    .timestate-segment {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        border-right: 1px solid rgba(0, 0, 0, 0.2);
+    }
+
+    .timestate-axis {
+        display: flex;
+        justify-content: space-between;
+        color: var(--subtle-text);
+        font-size: 11px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .timestate-empty,
+    .timestate-error {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--subtle-text);
+        font-size: 12px;
+        text-align: center;
+        padding: 12px;
+    }
+
+    .timestate-error {
+        color: #d27878;
+    }
+
     @media (max-width: 900px) {
         .editor-grid { grid-template-columns: 1fr; }
+        .timestate-row { grid-template-columns: 1fr; gap: 4px; }
     }
 </style>
+
+<script>
+    window.ZABBIX_CONFIG = {
+        api_url: 'modules/react-dashboard/api.php'
+    };
+</script>
+
+<?php
+$widgets_dir = $data['module_path'] . '/assets/js/widgets';
+$timestate_widget_file = $widgets_dir . '/TimeStateWidget.js';
+if (is_file($timestate_widget_file)) {
+    echo '<script type="text/babel" data-presets="react">' . "\n";
+    echo file_get_contents($timestate_widget_file);
+    echo "\n</script>\n";
+}
+?>
 
 <script type="text/babel">
     const { useState, useEffect, useMemo, useRef } = React;
@@ -687,7 +798,33 @@ $page->show();
         );
     };
 
-    const mergeWithDefaults = (widget) => ({ ...DEFAULT_WIDGET, ...widget });
+    const TIMESTATE_DEFAULT_WIDGET = {
+        type: 'TimeState',
+        name: 'Time State',
+        showHeader: true,
+        hostidsCsv: '',
+        itemKeySearch: '',
+        itemNameSearch: '',
+        lookbackHours: 24,
+        maxRows: 20,
+        historyPoints: 500,
+        rowSort: 0,
+        mergeEqual: 1,
+        refreshSec: 30,
+        stateMap: 'value:0=OK|#2E7D32,value:1=Problem|#C62828'
+    };
+
+    const widgetDefaultsByType = (type) => {
+        if (type === 'TimeState') {
+            return TIMESTATE_DEFAULT_WIDGET;
+        }
+        return DEFAULT_WIDGET;
+    };
+
+    const mergeWithDefaults = (widget) => {
+        const type = widget && widget.type ? widget.type : 'Clock';
+        return { ...widgetDefaultsByType(type), ...widget, type };
+    };
 
     const saveLayoutLocal = (items) => {
         localStorage.setItem('zbx_layout_v4', JSON.stringify(items));
@@ -699,16 +836,16 @@ $page->show();
             if (saved) {
                 return JSON.parse(saved).map(mergeWithDefaults);
             }
-            return [{
-                i: 'w1', x: 0, y: 0, w: 4, h: 8,
-                ...DEFAULT_WIDGET
-            }];
+            return [
+                { i: 'w1', x: 0, y: 0, w: 4, h: 8, ...DEFAULT_WIDGET },
+                { i: 'w2', x: 4, y: 0, w: 8, h: 10, ...TIMESTATE_DEFAULT_WIDGET }
+            ];
         });
 
         const onLayoutChange = (newLayout) => {
             const merged = newLayout.map((item) => {
-                const old = layout.find((w) => w.i === item.i) || DEFAULT_WIDGET;
-                return { ...old, ...item };
+                const old = layout.find((w) => w.i === item.i) || { type: 'Clock' };
+                return mergeWithDefaults({ ...old, ...item });
             });
             setLayout(merged);
             saveLayoutLocal(merged);
@@ -730,11 +867,19 @@ $page->show();
             });
         };
 
-        const addClock = () => {
+        const addWidget = (type) => {
+            const defaults = widgetDefaultsByType(type);
             setLayout((prev) => {
                 const next = [
                     ...prev,
-                    { i: `w${Date.now()}`, x: 0, y: Infinity, w: 4, h: 8, ...DEFAULT_WIDGET }
+                    {
+                        i: `w${Date.now()}`,
+                        x: 0,
+                        y: Infinity,
+                        w: type === 'TimeState' ? 8 : 4,
+                        h: type === 'TimeState' ? 10 : 8,
+                        ...defaults
+                    }
                 ];
                 saveLayoutLocal(next);
                 return next;
@@ -743,8 +888,11 @@ $page->show();
 
         return (
             <div style={{ padding: '20px' }}>
-                <button className="btn-zbx" style={{ marginBottom: 20, background: '#248ad2', borderColor: '#4aa1de' }} onClick={addClock}>
+                <button className="btn-zbx" style={{ marginBottom: 20, marginRight: 8, background: '#248ad2', borderColor: '#4aa1de' }} onClick={() => addWidget('Clock')}>
                     + Add Clock
+                </button>
+                <button className="btn-zbx" style={{ marginBottom: 20, background: '#2f7d4a', borderColor: '#56a16e' }} onClick={() => addWidget('TimeState')}>
+                    + Add Time State
                 </button>
 
                 <GridLayout
@@ -757,14 +905,22 @@ $page->show();
                     onLayoutChange={onLayoutChange}
                 >
                     {layout.map((w) => (
-                        <div key={w.i}>
-                            <ClockWidget
-                                widgetId={w.i}
-                                settings={w}
-                                updateSettings={(patch) => updateWidget(w.i, patch)}
-                                remove={() => removeWidget(w.i)}
-                            />
-                        </div>
+                        (() => {
+                            const WidgetComponent = (w.type === 'TimeState' && window.TimeStateWidget)
+                                ? window.TimeStateWidget
+                                : ClockWidget;
+
+                            return (
+                                <div key={w.i}>
+                                    <WidgetComponent
+                                        widgetId={w.i}
+                                        settings={w}
+                                        updateSettings={(patch) => updateWidget(w.i, patch)}
+                                        remove={() => removeWidget(w.i)}
+                                    />
+                                </div>
+                            );
+                        })()
                     ))}
                 </GridLayout>
             </div>
