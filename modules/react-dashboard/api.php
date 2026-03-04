@@ -43,10 +43,87 @@ if ($action === 'save') {
     exit;
 }
 
+if ($action === 'timestate_items') {
+    $hostids = parse_hostids_csv((string) ($_GET['hostids_csv'] ?? ''));
+    $item_key_search = trim((string) ($_GET['item_key_search'] ?? ''));
+    $item_name_search = trim((string) ($_GET['item_name_search'] ?? ''));
+    $max_rows = clamp_int((int) ($_GET['max_rows'] ?? 20), 1, 200);
+    $filter_exact = ((int) ($_GET['filter_exact'] ?? 0)) === 1;
+
+    if ($hostids === []) {
+        echo json_encode(['items' => []]);
+        exit;
+    }
+
+    $params = [
+        'output' => ['itemid', 'name', 'key_', 'value_type'],
+        'selectHosts' => ['name'],
+        'hostids' => $hostids,
+        'monitored' => true,
+        'limit' => min(5000, $max_rows * 10)
+    ];
+
+    $search = [];
+    if ($item_key_search !== '') {
+        $search['key_'] = normalize_search_pattern($item_key_search);
+    }
+    if ($item_name_search !== '') {
+        $search['name'] = normalize_search_pattern($item_name_search);
+    }
+    if ($search !== []) {
+        $params['search'] = $search;
+        $params['searchByAny'] = true;
+        $params['searchWildcardsEnabled'] = true;
+    }
+
+    $items = API::Item()->get($params) ?: [];
+    if ($filter_exact) {
+        $items = array_values(array_filter($items, static function(array $item) use ($item_key_search, $item_name_search): bool {
+            if ($item_key_search !== '') {
+                return strcasecmp((string) ($item['key_'] ?? ''), $item_key_search) === 0;
+            }
+            if ($item_name_search !== '') {
+                return strcasecmp((string) ($item['name'] ?? ''), $item_name_search) === 0;
+            }
+            return true;
+        }));
+    }
+
+    usort($items, static function(array $a, array $b): int {
+        $host_a = isset($a['hosts'][0]['name']) ? (string) $a['hosts'][0]['name'] : '';
+        $host_b = isset($b['hosts'][0]['name']) ? (string) $b['hosts'][0]['name'] : '';
+        $host_cmp = strcasecmp($host_a, $host_b);
+        if ($host_cmp !== 0) {
+            return $host_cmp;
+        }
+
+        return strcasecmp((string) ($a['name'] ?? ''), (string) ($b['name'] ?? ''));
+    });
+
+    $result = [];
+    foreach ($items as $item) {
+        $host_name = isset($item['hosts'][0]['name']) ? (string) $item['hosts'][0]['name'] : 'Host';
+        $result[] = [
+            'itemid' => (string) ($item['itemid'] ?? ''),
+            'name' => (string) ($item['name'] ?? ''),
+            'key_' => (string) ($item['key_'] ?? ''),
+            'host' => $host_name,
+            'label' => sprintf('%s :: %s [%s]', $host_name, (string) ($item['name'] ?? ''), (string) ($item['key_'] ?? ''))
+        ];
+        if (count($result) >= $max_rows) {
+            break;
+        }
+    }
+
+    echo json_encode(['items' => $result]);
+    exit;
+}
+
 if ($action === 'timestate_data') {
     $hostids = parse_hostids_csv((string) ($_GET['hostids_csv'] ?? ''));
-    if ($hostids === []) {
-        echo json_encode(['error' => 'Selecteer minstens een hostid (CSV).']);
+    $itemids = parse_itemids_csv((string) ($_GET['itemids_csv'] ?? ''));
+    if ($hostids === [] && $itemids === []) {
+        echo json_encode(['error' => 'Selecteer minstens een host of item.']);
         exit;
     }
 
@@ -65,10 +142,17 @@ if ($action === 'timestate_data') {
     $params = [
         'output' => ['itemid', 'name', 'key_', 'value_type'],
         'selectHosts' => ['name'],
-        'hostids' => $hostids,
         'monitored' => true,
         'limit' => $max_rows * 8
     ];
+
+    if ($hostids !== []) {
+        $params['hostids'] = $hostids;
+    }
+
+    if ($itemids !== []) {
+        $params['itemids'] = $itemids;
+    }
 
     $search = [];
     if ($item_key_search !== '') {
@@ -77,7 +161,7 @@ if ($action === 'timestate_data') {
     if ($item_name_search !== '') {
         $search['name'] = normalize_search_pattern($item_name_search);
     }
-    if ($search !== []) {
+    if ($itemids === [] && $search !== []) {
         $params['search'] = $search;
         $params['searchByAny'] = true;
         $params['searchWildcardsEnabled'] = true;
@@ -188,6 +272,10 @@ function parse_hostids_csv(string $raw): array {
     }
 
     return array_values(array_unique($ids));
+}
+
+function parse_itemids_csv(string $raw): array {
+    return parse_hostids_csv($raw);
 }
 
 function clamp_int(int $value, int $min, int $max): int {

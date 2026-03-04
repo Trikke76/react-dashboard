@@ -5,7 +5,9 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId }) => {
         type: 'TimeState',
         name: 'Time State',
         showHeader: true,
+        groupid: '',
         hostidsCsv: '',
+        itemidsCsv: '',
         itemKeySearch: '',
         itemNameSearch: '',
         lookbackHours: 24,
@@ -23,14 +25,81 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId }) => {
     const [error, setError] = useState('');
     const [model, setModel] = useState({ rows: [], time_from: 0, time_to: 0 });
 
+    const [groups, setGroups] = useState([]);
+    const [hosts, setHosts] = useState([]);
+    const [itemSuggestions, setItemSuggestions] = useState([]);
+    const [itemsLoading, setItemsLoading] = useState(false);
+
     const apiUrl = (window.ZABBIX_CONFIG && window.ZABBIX_CONFIG.api_url)
         ? window.ZABBIX_CONFIG.api_url
         : 'modules/react-dashboard/api.php';
+
+    const parseCsvIds = (raw) => String(raw || '')
+        .split(/[\s,]+/)
+        .map((v) => v.trim())
+        .filter((v) => /^\d+$/.test(v));
+
+    const selectedHostIds = useMemo(() => new Set(parseCsvIds(cfg.hostidsCsv)), [cfg.hostidsCsv]);
+    const selectedItemIds = useMemo(() => new Set(parseCsvIds(cfg.itemidsCsv)), [cfg.itemidsCsv]);
 
     const refreshMs = useMemo(() => {
         const sec = Number(cfg.refreshSec) || 30;
         return Math.max(5, Math.min(3600, sec)) * 1000;
     }, [cfg.refreshSec]);
+
+    const fetchGroups = useCallback(async () => {
+        try {
+            const response = await fetch(`${apiUrl}?action_type=get_groups`);
+            const payload = await response.json();
+            setGroups(Array.isArray(payload) ? payload : []);
+        }
+        catch (_err) {
+            setGroups([]);
+        }
+    }, [apiUrl]);
+
+    const fetchHosts = useCallback(async (groupid) => {
+        if (!groupid) {
+            setHosts([]);
+            return;
+        }
+        try {
+            const response = await fetch(`${apiUrl}?action_type=get_hosts_by_group&groupid=${encodeURIComponent(groupid)}`);
+            const payload = await response.json();
+            setHosts(Array.isArray(payload) ? payload : []);
+        }
+        catch (_err) {
+            setHosts([]);
+        }
+    }, [apiUrl]);
+
+    const fetchItemSuggestions = useCallback(async () => {
+        if (!cfg.hostidsCsv) {
+            setItemSuggestions([]);
+            return;
+        }
+
+        setItemsLoading(true);
+        try {
+            const params = new URLSearchParams({
+                action_type: 'timestate_items',
+                hostids_csv: String(cfg.hostidsCsv || ''),
+                item_key_search: String(cfg.itemKeySearch || ''),
+                item_name_search: String(cfg.itemNameSearch || ''),
+                max_rows: String(Math.max(1, Number(cfg.maxRows || 20)))
+            });
+
+            const response = await fetch(`${apiUrl}?${params.toString()}`);
+            const payload = await response.json();
+            setItemSuggestions(Array.isArray(payload.items) ? payload.items : []);
+        }
+        catch (_err) {
+            setItemSuggestions([]);
+        }
+        finally {
+            setItemsLoading(false);
+        }
+    }, [apiUrl, cfg.hostidsCsv, cfg.itemKeySearch, cfg.itemNameSearch, cfg.maxRows]);
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -40,6 +109,7 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId }) => {
             const params = new URLSearchParams({
                 action_type: 'timestate_data',
                 hostids_csv: String(cfg.hostidsCsv || ''),
+                itemids_csv: String(cfg.itemidsCsv || ''),
                 item_key_search: String(cfg.itemKeySearch || ''),
                 item_name_search: String(cfg.itemNameSearch || ''),
                 lookback_hours: String(cfg.lookbackHours || 24),
@@ -73,6 +143,7 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId }) => {
     }, [
         apiUrl,
         cfg.hostidsCsv,
+        cfg.itemidsCsv,
         cfg.itemKeySearch,
         cfg.itemNameSearch,
         cfg.lookbackHours,
@@ -91,6 +162,44 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId }) => {
         const timer = setInterval(fetchData, refreshMs);
         return () => clearInterval(timer);
     }, [fetchData, refreshMs]);
+
+    useEffect(() => {
+        if (editMode) {
+            fetchGroups();
+            if (cfg.groupid) {
+                fetchHosts(cfg.groupid);
+            }
+        }
+    }, [editMode, cfg.groupid, fetchGroups, fetchHosts]);
+
+    const setIdsCsv = (key, idsSet) => {
+        const sorted = Array.from(idsSet).sort((a, b) => Number(a) - Number(b));
+        updateSettings({ [key]: sorted.join(',') });
+    };
+
+    const toggleHost = (hostid) => {
+        const next = new Set(selectedHostIds);
+        if (next.has(hostid)) {
+            next.delete(hostid);
+        }
+        else {
+            next.add(hostid);
+        }
+        updateSettings({ hostidsCsv: Array.from(next).sort((a, b) => Number(a) - Number(b)).join(',') });
+    };
+
+    const toggleItem = (itemid) => {
+        const next = new Set(selectedItemIds);
+        if (next.has(itemid)) {
+            next.delete(itemid);
+        }
+        else {
+            next.add(itemid);
+        }
+        setIdsCsv('itemidsCsv', next);
+    };
+
+    const clearItemSelection = () => updateSettings({ itemidsCsv: '' });
 
     const timeFrom = Number(model.time_from || 0);
     const timeTo = Number(model.time_to || 0);
@@ -205,14 +314,38 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId }) => {
                                 </label>
                             </div>
 
-                            <div className="editor-label">Host IDs (CSV)</div>
+                            <div className="editor-label">Host group</div>
                             <div className="editor-control">
-                                <input
-                                    type="text"
-                                    value={cfg.hostidsCsv}
-                                    onChange={(e) => updateSettings({ hostidsCsv: e.target.value })}
-                                    placeholder="10105,10108"
-                                />
+                                <select
+                                    value={cfg.groupid || ''}
+                                    onChange={(e) => {
+                                        const groupid = e.target.value;
+                                        updateSettings({ groupid, hostidsCsv: '', itemidsCsv: '' });
+                                        fetchHosts(groupid);
+                                    }}
+                                >
+                                    <option value="">-- Select group --</option>
+                                    {groups.map((group) => (
+                                        <option key={group.groupid} value={group.groupid}>{group.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="editor-label">Hosts</div>
+                            <div className="editor-control">
+                                <div className="editor-host-list">
+                                    {hosts.length === 0 && <div className="editor-subtle">No hosts loaded for this group.</div>}
+                                    {hosts.map((host) => (
+                                        <label key={host.hostid} className="editor-host-item">
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedHostIds.has(String(host.hostid))}
+                                                onChange={() => toggleHost(String(host.hostid))}
+                                            />
+                                            <span>{host.name}</span>
+                                        </label>
+                                    ))}
+                                </div>
                             </div>
 
                             <div className="editor-label">Item key filter</div>
@@ -223,6 +356,32 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId }) => {
                             <div className="editor-label">Item name filter</div>
                             <div className="editor-control">
                                 <input type="text" value={cfg.itemNameSearch} onChange={(e) => updateSettings({ itemNameSearch: e.target.value })} />
+                            </div>
+
+                            <div className="editor-label">Find items</div>
+                            <div className="editor-control editor-inline-actions">
+                                <button className="btn-zbx" type="button" onClick={fetchItemSuggestions}>
+                                    {itemsLoading ? 'Searching...' : 'Search'}
+                                </button>
+                                <button className="btn-zbx" type="button" onClick={clearItemSelection}>Clear selected items</button>
+                                <span className="editor-subtle">Selected: {selectedItemIds.size}</span>
+                            </div>
+
+                            <div className="editor-label">Item matches</div>
+                            <div className="editor-control">
+                                <div className="editor-item-list">
+                                    {itemSuggestions.length === 0 && <div className="editor-subtle">Run search to list matching items.</div>}
+                                    {itemSuggestions.map((item) => (
+                                        <label key={item.itemid} className="editor-item-entry">
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedItemIds.has(String(item.itemid))}
+                                                onChange={() => toggleItem(String(item.itemid))}
+                                            />
+                                            <span title={item.label}>{item.label}</span>
+                                        </label>
+                                    ))}
+                                </div>
                             </div>
 
                             <div className="editor-label">Lookback (hours)</div>

@@ -288,6 +288,46 @@ $page->show();
         font-size: 12px;
     }
 
+    .editor-host-list,
+    .editor-item-list {
+        max-height: 150px;
+        overflow: auto;
+        border: 1px solid var(--border-color);
+        border-radius: 2px;
+        background: var(--input-bg);
+        padding: 6px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .editor-host-item,
+    .editor-item-entry {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        min-height: 20px;
+    }
+
+    .editor-item-entry span {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .editor-inline-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    .editor-subtle {
+        color: var(--subtle-text);
+        font-size: 11px;
+    }
+
     .editor-segment {
         display: inline-flex;
         border: 1px solid var(--border-color);
@@ -802,7 +842,9 @@ if (is_file($timestate_widget_file)) {
         type: 'TimeState',
         name: 'Time State',
         showHeader: true,
+        groupid: '',
         hostidsCsv: '',
+        itemidsCsv: '',
         itemKeySearch: '',
         itemNameSearch: '',
         lookbackHours: 24,
