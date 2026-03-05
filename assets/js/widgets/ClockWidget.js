@@ -16,24 +16,32 @@ window.ClockWidget = ({ remove, widgetId }) => {
         { value: 'America/Los_Angeles', label: 'America/Los_Angeles' },
         { value: 'Asia/Tokyo', label: 'Asia/Tokyo' }
     ];
+    const ALLOWED_TIMEZONES = new Set(TIMEZONE_OPTIONS.map((option) => option.value));
+    const sanitizeSettings = (raw) => {
+        const source = raw && typeof raw === 'object' ? raw : {};
+        const mode = source.mode === 'analog' ? 'analog' : 'digital';
+        const hourFormat = source.hourFormat === '12' ? '12' : '24';
+        const timezone = ALLOWED_TIMEZONES.has(source.timezone) ? source.timezone : DEFAULT_SETTINGS.timezone;
+        return { mode, hourFormat, timezone };
+    };
 
     const [now, setNow] = React.useState(new Date());
     const [isEditing, setIsEditing] = React.useState(false);
     const [settings, setSettings] = React.useState(() => {
         if (!widgetId) {
-            return DEFAULT_SETTINGS;
+            return sanitizeSettings(DEFAULT_SETTINGS);
         }
 
         try {
             const raw = localStorage.getItem(`zbx_clock_settings_${widgetId}`);
             if (!raw) {
-                return DEFAULT_SETTINGS;
+                return sanitizeSettings(DEFAULT_SETTINGS);
             }
             const parsed = JSON.parse(raw);
-            return { ...DEFAULT_SETTINGS, ...parsed };
+            return sanitizeSettings({ ...DEFAULT_SETTINGS, ...parsed });
         }
         catch (error) {
-            return DEFAULT_SETTINGS;
+            return sanitizeSettings(DEFAULT_SETTINGS);
         }
     });
 
@@ -44,7 +52,7 @@ window.ClockWidget = ({ remove, widgetId }) => {
 
     React.useEffect(() => {
         if (widgetId) {
-            localStorage.setItem(`zbx_clock_settings_${widgetId}`, JSON.stringify(settings));
+            localStorage.setItem(`zbx_clock_settings_${widgetId}`, JSON.stringify(sanitizeSettings(settings)));
         }
     }, [settings, widgetId]);
 
@@ -111,7 +119,7 @@ window.ClockWidget = ({ remove, widgetId }) => {
         : settings.timezone;
 
     const updateSetting = (key, value) => {
-        setSettings((prev) => ({ ...prev, [key]: value }));
+        setSettings((prev) => sanitizeSettings({ ...prev, [key]: value }));
     };
 
     const renderClock = () => {

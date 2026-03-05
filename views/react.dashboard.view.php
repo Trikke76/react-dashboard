@@ -617,13 +617,16 @@ $page->show();
     }
 </style>
 
+<?php
+$module_base = rtrim(dirname($_SERVER['SCRIPT_NAME']), '/');
+$zabbix_config = [
+    'module_base' => $module_base,
+    'api_url' => $module_base . '/zabbix.php?action=react.dashboard',
+    'api_fallback_url' => $module_base . '/zabbix.php?action=react.dashboard'
+];
+?>
 <script>
-    <?php $module_base = rtrim(dirname($_SERVER['SCRIPT_NAME']), '/'); ?>
-    window.ZABBIX_CONFIG = {
-        module_base: '<?php echo $module_base; ?>',
-        api_url: '<?php echo $module_base; ?>/zabbix.php?action=react.dashboard',
-        api_fallback_url: '<?php echo $module_base; ?>/zabbix.php?action=react.dashboard'
-    };
+    window.ZABBIX_CONFIG = <?php echo json_encode($zabbix_config, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
 </script>
 
 <?php
@@ -1086,13 +1089,118 @@ if (is_file($timestate_widget_file)) {
         return DEFAULT_WIDGET;
     };
 
-    const mergeWithDefaults = (widget) => {
-        const type = widget && widget.type ? widget.type : 'Clock';
-        return { ...widgetDefaultsByType(type), ...widget, type };
+    const toBoundedInt = (value, fallback, min, max) => {
+        const num = Number(value);
+        if (!Number.isFinite(num)) {
+            return fallback;
+        }
+        return Math.max(min, Math.min(max, Math.round(num)));
+    };
+
+    const toBoolean = (value, fallback) => (typeof value === 'boolean' ? value : fallback);
+    const toText = (value, fallback, maxLength = 120) => {
+        if (typeof value !== 'string') {
+            return fallback;
+        }
+        return value.slice(0, maxLength);
+    };
+    const toId = (value, fallback = '') => (/^\d+$/.test(String(value || '').trim()) ? String(value).trim() : fallback);
+    const toIdsCsv = (value) => Array.from(new Set(
+        String(value || '')
+            .split(/[\s,]+/)
+            .map((entry) => entry.trim())
+            .filter((entry) => /^\d+$/.test(entry))
+    )).join(',');
+    const sanitizeWidgetKey = (value, fallback) => {
+        const raw = String(value || '').trim();
+        if (/^[A-Za-z0-9_-]{1,80}$/.test(raw)) {
+            return raw;
+        }
+        return fallback;
+    };
+    const sanitizeDatasetsJson = (value) => {
+        if (typeof value !== 'string') {
+            return '';
+        }
+        const raw = value.trim();
+        if (raw === '') {
+            return '';
+        }
+        try {
+            const parsed = JSON.parse(raw);
+            if (!Array.isArray(parsed)) {
+                return '';
+            }
+            return JSON.stringify(parsed.slice(0, 20));
+        }
+        catch (_err) {
+            return '';
+        }
+    };
+
+    const mergeWithDefaults = (widget, fallbackId) => {
+        const source = (widget && typeof widget === 'object') ? widget : {};
+        const type = source.type === 'TimeState' ? 'TimeState' : 'Clock';
+        const defaults = widgetDefaultsByType(type);
+        const base = { ...defaults, ...source, type };
+        const safe = {
+            ...base,
+            i: sanitizeWidgetKey(base.i, fallbackId),
+            x: toBoundedInt(base.x, 0, 0, 5000),
+            y: toBoundedInt(base.y, 0, 0, 20000),
+            w: toBoundedInt(base.w, type === 'TimeState' ? 8 : 4, 1, 36),
+            h: toBoundedInt(base.h, type === 'TimeState' ? 10 : 8, 1, 200),
+            name: toText(base.name, defaults.name, 120),
+            showHeader: toBoolean(base.showHeader, defaults.showHeader)
+        };
+
+        if (type === 'TimeState') {
+            safe.groupid = toId(base.groupid, '');
+            safe.hostidsCsv = toIdsCsv(base.hostidsCsv);
+            safe.itemidsCsv = toIdsCsv(base.itemidsCsv);
+            safe.filterMode = base.filterMode === 'name' ? 'name' : 'key';
+            safe.itemFilter = toText(base.itemFilter, '', 255);
+            safe.rowSort = toBoundedInt(base.rowSort, 0, 0, 2);
+            safe.rowGroupMode = toBoundedInt(base.rowGroupMode, 0, 0, 2);
+            safe.rowGroupCollapsed = toBoundedInt(base.rowGroupCollapsed, 0, 0, 1);
+            safe.refreshSec = toBoundedInt(base.refreshSec, 30, 5, 3600);
+            safe.stateMap = toText(base.stateMap, TIMESTATE_DEFAULT_WIDGET.stateMap, 2048);
+            safe.datasetsJson = sanitizeDatasetsJson(base.datasetsJson);
+            return safe;
+        }
+
+        const allowedRefresh = new Set(REFRESH_OPTIONS.map((option) => option.value));
+        const allowedTimezone = new Set(TIMEZONE_OPTIONS);
+        safe.refreshInterval = allowedRefresh.has(base.refreshInterval) ? base.refreshInterval : DEFAULT_WIDGET.refreshInterval;
+        safe.timeType = base.timeType === 'custom' ? 'custom' : 'local';
+        safe.clockType = base.clockType === 'digital' ? 'digital' : 'analog';
+        safe.showDate = toBoolean(base.showDate, DEFAULT_WIDGET.showDate);
+        safe.showTime = toBoolean(base.showTime, DEFAULT_WIDGET.showTime);
+        safe.showTimezone = toBoolean(base.showTimezone, DEFAULT_WIDGET.showTimezone);
+        safe.background = base.background === 'dark' ? 'dark' : 'theme';
+        safe.timeBold = toBoolean(base.timeBold, DEFAULT_WIDGET.timeBold);
+        safe.showSeconds = toBoolean(base.showSeconds, DEFAULT_WIDGET.showSeconds);
+        safe.hourFormat = base.hourFormat === '12' ? '12' : '24';
+        safe.dateSize = toBoundedInt(base.dateSize, DEFAULT_WIDGET.dateSize, 60, 220);
+        safe.timezone = allowedTimezone.has(base.timezone) ? base.timezone : DEFAULT_WIDGET.timezone;
+        return safe;
+    };
+
+    const sanitizeLayout = (items) => {
+        if (!Array.isArray(items)) {
+            return [];
+        }
+
+        return items
+            .slice(0, 60)
+            .filter((item) => item && typeof item === 'object')
+            .map((item, index) => mergeWithDefaults(item, `w${index + 1}`));
     };
 
     const saveLayoutLocal = (items) => {
-        localStorage.setItem('zbx_layout_v4', JSON.stringify(items));
+        const safeItems = sanitizeLayout(items);
+        localStorage.setItem('zbx_layout_v4', JSON.stringify(safeItems));
+        return safeItems;
     };
 
     const App = () => {
@@ -1101,30 +1209,39 @@ if (is_file($timestate_widget_file)) {
         const apiClient = useMemo(() => createDashboardApiClient(window.ZABBIX_CONFIG || {}), []);
         const [globalData, setGlobalData] = useState({ groups: [], refreshedAt: 0 });
         const [layout, setLayout] = useState(() => {
-            const saved = localStorage.getItem('zbx_layout_v4');
-            if (saved) {
-                return JSON.parse(saved).map(mergeWithDefaults);
-            }
-            return [
-                { i: 'w1', x: 0, y: 0, w: 4, h: 8, ...DEFAULT_WIDGET },
-                { i: 'w2', x: 4, y: 0, w: 8, h: 10, ...TIMESTATE_DEFAULT_WIDGET }
+            const fallbackLayout = [
+                mergeWithDefaults({ i: 'w1', x: 0, y: 0, w: 4, h: 8, ...DEFAULT_WIDGET }, 'w1'),
+                mergeWithDefaults({ i: 'w2', x: 4, y: 0, w: 8, h: 10, ...TIMESTATE_DEFAULT_WIDGET }, 'w2')
             ];
+
+            const saved = localStorage.getItem('zbx_layout_v4');
+            if (!saved) {
+                return fallbackLayout;
+            }
+
+            try {
+                const parsed = JSON.parse(saved);
+                const sanitized = sanitizeLayout(parsed);
+                return sanitized.length > 0 ? sanitized : fallbackLayout;
+            }
+            catch (_err) {
+                return fallbackLayout;
+            }
         });
 
         const onLayoutChange = (newLayout) => {
             const merged = newLayout.map((item) => {
                 const old = layout.find((w) => w.i === item.i) || { type: 'Clock' };
-                return mergeWithDefaults({ ...old, ...item });
+                return mergeWithDefaults({ ...old, ...item }, old.i || `w${Date.now()}`);
             });
-            setLayout(merged);
-            saveLayoutLocal(merged);
+            const safe = saveLayoutLocal(merged);
+            setLayout(safe);
         };
 
         const updateWidget = (id, patch) => {
             setLayout((prev) => {
-                const next = prev.map((w) => (w.i === id ? { ...w, ...patch } : w));
-                saveLayoutLocal(next);
-                return next;
+                const next = prev.map((w) => (w.i === id ? mergeWithDefaults({ ...w, ...patch }, w.i) : w));
+                return saveLayoutLocal(next);
             });
         };
 
@@ -1144,8 +1261,7 @@ if (is_file($timestate_widget_file)) {
         const removeWidget = (id) => {
             setLayout((prev) => {
                 const next = prev.filter((w) => w.i !== id);
-                saveLayoutLocal(next);
-                return next;
+                return saveLayoutLocal(next);
             });
         };
 
@@ -1154,17 +1270,16 @@ if (is_file($timestate_widget_file)) {
             setLayout((prev) => {
                 const next = [
                     ...prev,
-                    {
+                    mergeWithDefaults({
                         i: `w${Date.now()}`,
                         x: 0,
                         y: Infinity,
                         w: type === 'TimeState' ? 8 : 4,
                         h: type === 'TimeState' ? 10 : 8,
                         ...defaults
-                    }
+                    }, `w${Date.now()}`)
                 ];
-                saveLayoutLocal(next);
-                return next;
+                return saveLayoutLocal(next);
             });
         };
 

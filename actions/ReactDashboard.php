@@ -12,13 +12,17 @@ class ReactDashboard extends CController {
     private const DEFAULT_MAX_ROWS = 20;
     private const DEFAULT_HISTORY_POINTS = 500;
     private const DEFAULT_STATE_MAP = 'value:1=OK|#2E7D32,value:0=Problem|#C62828';
-
-    protected function init(): void {
-        $this->disableCsrfValidation();
-    }
+    private const MAX_DATASETS = 20;
+    private const MAX_STATE_MAP_LENGTH = 2048;
+    private const MAX_REGEX_PATTERN_LENGTH = 128;
 
     protected function checkInput(): bool {
-        return true;
+        $action = (string) $this->req('action_type', '');
+        if ($action === '') {
+            return true;
+        }
+
+        return in_array($action, ['get_groups', 'get_hosts_by_group', 'timestate_items', 'timestate_data'], true);
     }
 
     protected function checkPermissions(): bool {
@@ -86,20 +90,16 @@ class ReactDashboard extends CController {
         }
 
         if ($action === 'get_hosts_by_group') {
+            $groupid = (string) $this->req('groupid', '');
+            $groupid = ctype_digit($groupid) ? $groupid : null;
             $hosts = API::Host()->get([
                 'output' => ['hostid', 'name', 'available'],
-                'groupids' => $this->req('groupid', null),
+                'groupids' => $groupid,
                 'monitored_hosts' => true,
                 'sortfield' => 'name'
             ]) ?: [];
 
             $this->respondJson(array_values($hosts));
-        }
-
-        if ($action === 'save') {
-            $hostid = $this->req('hostid', 0);
-            CProfile::update('web.react_dashboard.hostid', $hostid, PROFILE_TYPE_ID);
-            $this->respondJson(['status' => 'ok']);
         }
 
         if ($action === 'timestate_items') {
@@ -359,7 +359,12 @@ class ReactDashboard extends CController {
     }
 
     private function req(string $name, $default = null) {
-        return $_REQUEST[$name] ?? $default;
+        if (!array_key_exists($name, $_REQUEST)) {
+            return $default;
+        }
+
+        $value = $_REQUEST[$name];
+        return is_scalar($value) ? $value : $default;
     }
 
     private function respondJson($payload): void {
@@ -437,7 +442,7 @@ class ReactDashboard extends CController {
         }
 
         $sets = [];
-        foreach ($data as $entry) {
+        foreach (array_slice($data, 0, self::MAX_DATASETS) as $entry) {
             if (!is_array($entry)) {
                 continue;
             }
@@ -453,24 +458,25 @@ class ReactDashboard extends CController {
         $history_points = $this->clampInt((int) ($entry['history_points'] ?? self::DEFAULT_HISTORY_POINTS), 10, 5000);
         $merge_shorter_than = $this->clampInt((int) ($entry['merge_shorter_than'] ?? 0), 0, 3600);
         $state_map_raw = trim((string) ($entry['state_map'] ?? self::DEFAULT_STATE_MAP));
+        $state_map_raw = substr($state_map_raw, 0, self::MAX_STATE_MAP_LENGTH);
         if ($state_map_raw === '') {
             $state_map_raw = self::DEFAULT_STATE_MAP;
         }
         $rules = $this->parseValueMappings($state_map_raw);
 
         return [
-            'name' => trim((string) ($entry['name'] ?? '')),
+            'name' => substr(trim((string) ($entry['name'] ?? '')), 0, 120),
             'filter_type' => $this->normalizeFilterType(
                 (string) ($entry['filter_type'] ?? ''),
                 trim((string) ($entry['item_key_search'] ?? '')),
                 trim((string) ($entry['item_name_search'] ?? ''))
             ),
-            'filter_value' => trim((string) (
+            'filter_value' => substr(trim((string) (
                 $entry['filter_value']
                 ?? $entry['item_key_search']
                 ?? $entry['item_name_search']
                 ?? ''
-            )),
+            )), 0, 255),
             'filter_exact' => ((int) ($entry['filter_exact'] ?? 0)) === 1 ? 1 : 0,
             'lookback_hours' => $lookback_hours,
             'max_rows' => $max_rows,
@@ -532,7 +538,7 @@ class ReactDashboard extends CController {
             }
             elseif (str_starts_with($condition, 'regex:')) {
                 $rule['type'] = 'regex';
-                $rule['pattern'] = trim(substr($condition, 6));
+                $rule['pattern'] = substr(trim(substr($condition, 6)), 0, self::MAX_REGEX_PATTERN_LENGTH);
             }
             elseif (str_starts_with($condition, 'special:')) {
                 $rule['type'] = 'special';
@@ -818,11 +824,10 @@ class ReactDashboard extends CController {
             elseif ($type === 'regex') {
                 $pattern = (string) ($rule['pattern'] ?? '');
                 if ($pattern !== '') {
-                    $regex = $pattern;
-                    if (@preg_match($regex, '') === false) {
-                        $regex = '/' . str_replace('/', '\\/', $pattern) . '/i';
+                    $regex = $this->compileSafeRegex($pattern);
+                    if ($regex !== null) {
+                        $matched = preg_match($regex, $trimmed) === 1 || preg_match($regex, $state) === 1;
                     }
-                    $matched = @preg_match($regex, $trimmed) === 1 || @preg_match($regex, $state) === 1;
                 }
             }
             elseif ($type === 'special') {
@@ -852,6 +857,49 @@ class ReactDashboard extends CController {
             'label' => $state,
             'color' => $this->resolveStateColor($state, $base_colors)
         ];
+    }
+
+    private function compileSafeRegex(string $pattern): ?string {
+        $pattern = trim($pattern);
+        if ($pattern === '' || strlen($pattern) > self::MAX_REGEX_PATTERN_LENGTH) {
+            return null;
+        }
+
+        if (preg_match('/[[:cntrl:]]/', $pattern) === 1) {
+            return null;
+        }
+
+        $body = $pattern;
+        $flags = 'iu';
+
+        if ($pattern[0] === '/' && strlen($pattern) > 2) {
+            $last_slash = strrpos($pattern, '/');
+            if ($last_slash !== false && $last_slash > 0) {
+                $body = substr($pattern, 1, $last_slash - 1);
+                $raw_flags = substr($pattern, $last_slash + 1);
+                $flags = preg_replace('/[^imu]/', '', $raw_flags) ?: 'iu';
+            }
+        }
+
+        if (preg_match('/\\\\[1-9]|\\(\\?R|\\(\\?0|\\(\\?&|\\(\\?<=|\\(\\?<!/', $body) === 1) {
+            return null;
+        }
+
+        if (preg_match('/\\{\\d{4,}(?:,\\d{0,4})?\\}|\\{\\d{1,4},\\d{4,}\\}/', $body) === 1) {
+            return null;
+        }
+
+        $regex = '/'.str_replace('/', '\\/', $body).'/'.$flags;
+        set_error_handler(static function(): bool {
+            return true;
+        }, E_WARNING);
+        $is_valid = preg_match($regex, '') !== false;
+        restore_error_handler();
+        if (!$is_valid) {
+            return null;
+        }
+
+        return $regex;
     }
 
     private function resolveStateColor(string $state, array $base_colors): string {
