@@ -16,13 +16,12 @@ class ReactDashboard extends CController {
     private const MAX_STATE_MAP_LENGTH = 2048;
     private const MAX_REGEX_PATTERN_LENGTH = 128;
 
-    protected function checkInput(): bool {
-        $action = (string) $this->req('action_type', '');
-        if ($action === '') {
-            return true;
-        }
+    protected function init(): void {
+        $this->disableCsrfValidation();
+    }
 
-        return in_array($action, ['get_groups', 'get_hosts_by_group', 'timestate_items', 'timestate_data'], true);
+    protected function checkInput(): bool {
+        return true;
     }
 
     protected function checkPermissions(): bool {
