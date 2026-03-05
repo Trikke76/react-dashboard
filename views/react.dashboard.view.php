@@ -505,7 +505,7 @@ $page->show();
     window.ZABBIX_CONFIG = {
         module_base: '<?php echo $module_base; ?>',
         api_action_url: '<?php echo $module_base; ?>/zabbix.php?action=react.dashboard.api',
-        api_url: '<?php echo $module_base; ?>/modules/react-dashboard/modules/react-dashboard/api.php',
+        api_url: '<?php echo $module_base; ?>/modules/react-dashboard/api.php',
         api_fallback_url: '<?php echo $module_base; ?>/modules/react-dashboard/api.php'
     };
 </script>
