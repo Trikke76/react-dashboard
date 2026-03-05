@@ -175,9 +175,8 @@ class ReactDashboard extends CController {
 
         if ($action === 'timestate_data') {
             $hostids = $this->parseIds((string) $this->req('hostids_csv', ''));
-            $itemids = $this->parseIds((string) $this->req('itemids_csv', ''));
-            if ($hostids === [] && $itemids === []) {
-                $this->respondJson(['error' => 'Selecteer minstens een host of item.']);
+            if ($hostids === []) {
+                $this->respondJson(['error' => 'Selecteer minstens een host.']);
             }
 
             [$legacy_filter_mode, $legacy_item_filter] = $this->resolveFilterInput();
@@ -224,13 +223,9 @@ class ReactDashboard extends CController {
                 if ($hostids !== []) {
                     $params['hostids'] = $hostids;
                 }
-                if ($itemids !== []) {
-                    $params['itemids'] = $itemids;
-                }
-
                 $filter_type = (string) ($data_set['filter_type'] ?? 'key');
                 $filter_value = trim((string) ($data_set['filter_value'] ?? ''));
-                if ($itemids === [] && $filter_value !== '') {
+                if ($filter_value !== '') {
                     $search_field = $filter_type === 'name' ? 'name' : 'key_';
                     $params['search'] = [
                         $search_field => $this->normalizeSearchPattern($filter_value)

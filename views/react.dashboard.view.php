@@ -1076,7 +1076,6 @@ if (is_file($timestate_widget_file)) {
         showHeader: true,
         groupid: '',
         hostidsCsv: '',
-        itemidsCsv: '',
         filterMode: 'key',
         itemFilter: '',
         rowSort: 0,
@@ -1162,7 +1161,6 @@ if (is_file($timestate_widget_file)) {
         if (type === 'TimeState') {
             safe.groupid = toId(base.groupid, '');
             safe.hostidsCsv = toIdsCsv(base.hostidsCsv);
-            safe.itemidsCsv = toIdsCsv(base.itemidsCsv);
             safe.filterMode = base.filterMode === 'name' ? 'name' : 'key';
             safe.itemFilter = toText(base.itemFilter, '', 255);
             safe.rowSort = toBoundedInt(base.rowSort, 0, 0, 2);

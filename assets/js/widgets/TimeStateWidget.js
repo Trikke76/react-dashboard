@@ -2,6 +2,10 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
     const { useState, useEffect, useMemo, useCallback } = React;
 
     const DEFAULT_STATE_MAP = 'value:1=OK|#2E7D32,value:0=Problem|#C62828';
+    const MAX_DATASETS = 10;
+    const MAX_ROWS = 100;
+    const MAX_LOOKBACK_HOURS = 24 * 14;
+    const MAX_HISTORY_POINTS = 2000;
 
     const DEFAULT_DATASET = {
         name: '',
@@ -24,7 +28,6 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
         showHeader: true,
         groupid: '',
         hostidsCsv: '',
-        itemidsCsv: '',
         filterMode: 'key',
         itemFilter: '',
         itemKeySearch: '',
@@ -53,8 +56,6 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
 
     const [groups, setGroups] = useState([]);
     const [hosts, setHosts] = useState([]);
-    const [itemSuggestionsByDataset, setItemSuggestionsByDataset] = useState({});
-    const [itemsLoadingByDataset, setItemsLoadingByDataset] = useState({});
 
     const [hostPickerOpen, setHostPickerOpen] = useState(false);
     const [hostSearchTerm, setHostSearchTerm] = useState('');
@@ -147,9 +148,9 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
             filter_type: filterType,
             filter_value: filterValue,
             filter_exact: String(source.filter_exact ?? '0') === '1' ? '1' : '0',
-            max_rows: String(clampInt(Number(source.max_rows || 20) || 20, 1, 200)),
-            lookback_hours: String(clampInt(Number(source.lookback_hours || 24) || 24, 1, 24 * 31)),
-            history_points: String(clampInt(Number(source.history_points || 500) || 500, 10, 5000)),
+            max_rows: String(clampInt(Number(source.max_rows || 20) || 20, 1, MAX_ROWS)),
+            lookback_hours: String(clampInt(Number(source.lookback_hours || 24) || 24, 1, MAX_LOOKBACK_HOURS)),
+            history_points: String(clampInt(Number(source.history_points || 500) || 500, 10, MAX_HISTORY_POINTS)),
             merge_equal_states: String(source.merge_equal_states ?? '1') === '0' ? '0' : '1',
             merge_shorter_than: String(clampInt(Number(source.merge_shorter_than || 0) || 0, 0, 3600)),
             null_gap_mode: String(source.null_gap_mode ?? '0') === '1' ? '1' : '0',
@@ -191,6 +192,7 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                 return [normalizeDataSet({}, fallbackFilter)];
             }
             const sets = parsed
+                .slice(0, MAX_DATASETS)
                 .filter((entry) => entry && typeof entry === 'object')
                 .map((entry) => normalizeDataSet(entry, fallbackFilter));
 
@@ -203,6 +205,7 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
 
     const serializeDataSets = (rows) => {
         const normalized = rows
+            .slice(0, MAX_DATASETS)
             .filter((row) => row && typeof row === 'object')
             .map((row) => normalizeDataSet(row, { type: 'key', value: '' }));
 
@@ -213,7 +216,6 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
     const safeActiveDatasetIdx = Math.max(0, Math.min(activeDatasetIdx, datasets.length - 1));
 
     const selectedHostIds = useMemo(() => new Set(parseCsvIds(cfg.hostidsCsv)), [cfg.hostidsCsv]);
-    const selectedItemIds = useMemo(() => new Set(parseCsvIds(cfg.itemidsCsv)), [cfg.itemidsCsv]);
 
     const filteredHosts = useMemo(() => {
         const query = String(hostSearchTerm || '').trim().toLowerCase();
@@ -239,17 +241,6 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
 
         return `${selectedHosts.slice(0, 3).join(', ')} +${selectedHosts.length - 3}`;
     }, [hosts, selectedHostIds]);
-
-    const datasetFilterSignature = useMemo(() => (
-        datasets
-            .map((dataSet) => [
-                String(dataSet.filter_type || ''),
-                String(dataSet.filter_value || ''),
-                String(dataSet.filter_exact || ''),
-                String(dataSet.max_rows || '')
-            ].join('|'))
-            .join('||')
-    ), [datasets]);
 
     useEffect(() => {
         if (safeActiveDatasetIdx !== activeDatasetIdx) {
@@ -313,42 +304,6 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
         }
     }, [cachedJson]);
 
-    const fetchItemSuggestions = useCallback(async (datasetIdx, dataSet) => {
-        if (!cfg.hostidsCsv) {
-            setItemSuggestionsByDataset((prev) => ({ ...prev, [datasetIdx]: [] }));
-            return;
-        }
-
-        const filterValue = String(dataSet && dataSet.filter_value || '').trim();
-        if (filterValue === '') {
-            setItemSuggestionsByDataset((prev) => ({ ...prev, [datasetIdx]: [] }));
-            return;
-        }
-
-        setItemsLoadingByDataset((prev) => ({ ...prev, [datasetIdx]: true }));
-        try {
-            const payload = await cachedJson({
-                action_type: 'timestate_items',
-                hostids_csv: String(cfg.hostidsCsv || ''),
-                filter_mode: String(dataSet && dataSet.filter_type || 'key'),
-                item_filter: filterValue,
-                filter_exact: String(dataSet && dataSet.filter_exact || '0'),
-                max_rows: String(Math.max(1, Number(dataSet && dataSet.max_rows || 20)))
-            }, 6000);
-
-            setItemSuggestionsByDataset((prev) => ({
-                ...prev,
-                [datasetIdx]: Array.isArray(payload.items) ? payload.items : []
-            }));
-        }
-        catch (_err) {
-            setItemSuggestionsByDataset((prev) => ({ ...prev, [datasetIdx]: [] }));
-        }
-        finally {
-            setItemsLoadingByDataset((prev) => ({ ...prev, [datasetIdx]: false }));
-        }
-    }, [cachedJson, cfg.hostidsCsv]);
-
     const fetchData = useCallback(async () => {
         setLoading(true);
         setError('');
@@ -357,7 +312,6 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
             const payload = await requestJson({
                 action_type: 'timestate_data',
                 hostids_csv: String(cfg.hostidsCsv || ''),
-                itemids_csv: String(cfg.itemidsCsv || ''),
                 datasets_json: serializeDataSets(datasets),
                 row_sort: String(cfg.rowSort || 0),
                 row_group_mode: String(cfg.rowGroupMode || 0),
@@ -377,7 +331,7 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
         finally {
             setLoading(false);
         }
-    }, [requestJson, cfg.hostidsCsv, cfg.itemidsCsv, cfg.rowSort, cfg.rowGroupMode, cfg.rowGroupCollapsed, datasets]);
+    }, [requestJson, cfg.hostidsCsv, cfg.rowSort, cfg.rowGroupMode, cfg.rowGroupCollapsed, datasets]);
 
     useEffect(() => {
         fetchData();
@@ -406,32 +360,6 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
     }, [globalData]);
 
     useEffect(() => {
-        if (!editMode) {
-            return;
-        }
-        if (!cfg.hostidsCsv) {
-            setItemSuggestionsByDataset({});
-            setItemsLoadingByDataset({});
-            return;
-        }
-
-        const timers = datasets.map((dataSet, idx) => setTimeout(() => {
-            fetchItemSuggestions(idx, dataSet);
-        }, 350));
-
-        return () => timers.forEach((timer) => clearTimeout(timer));
-    }, [editMode, cfg.hostidsCsv, datasets, datasetFilterSignature, fetchItemSuggestions]);
-
-    useEffect(() => {
-        setItemSuggestionsByDataset((prev) => Object.fromEntries(
-            Object.entries(prev).filter(([key]) => Number(key) < datasets.length)
-        ));
-        setItemsLoadingByDataset((prev) => Object.fromEntries(
-            Object.entries(prev).filter(([key]) => Number(key) < datasets.length)
-        ));
-    }, [datasets.length]);
-
-    useEffect(() => {
         if ((Number(cfg.rowGroupMode) || 0) === 0) {
             setCollapsedGroups({});
             return;
@@ -452,7 +380,7 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
     }, [model.rows, cfg.rowGroupMode, cfg.rowGroupCollapsed]);
 
     const updateDatasets = (nextRows) => {
-        updateSettings({ datasetsJson: serializeDataSets(nextRows), itemidsCsv: '' });
+        updateSettings({ datasetsJson: serializeDataSets(nextRows) });
     };
 
     const updateDataset = (index, patch) => {
@@ -461,6 +389,9 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
     };
 
     const addDataset = () => {
+        if (datasets.length >= MAX_DATASETS) {
+            return;
+        }
         const next = [...datasets, { ...DEFAULT_DATASET }];
         updateDatasets(next);
         setActiveDatasetIdx(next.length - 1);
@@ -501,11 +432,6 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
         updateDataset(datasetIdx, { state_map: serializeMappings(next) });
     };
 
-    const setIdsCsv = (key, idsSet) => {
-        const sorted = Array.from(idsSet).sort((a, b) => Number(a) - Number(b));
-        updateSettings({ [key]: sorted.join(',') });
-    };
-
     const toggleHost = (hostid) => {
         const next = new Set(selectedHostIds);
         if (next.has(hostid)) {
@@ -516,37 +442,17 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
         }
 
         const hostidsCsv = Array.from(next).sort((a, b) => Number(a) - Number(b)).join(',');
-        updateSettings({ hostidsCsv, itemidsCsv: '' });
+        updateSettings({ hostidsCsv });
     };
 
     const selectAllVisibleHosts = () => {
         const next = new Set(selectedHostIds);
         filteredHosts.forEach((host) => next.add(String(host.hostid)));
         const hostidsCsv = Array.from(next).sort((a, b) => Number(a) - Number(b)).join(',');
-        updateSettings({ hostidsCsv, itemidsCsv: '' });
+        updateSettings({ hostidsCsv });
     };
 
-    const clearHostSelection = () => updateSettings({ hostidsCsv: '', itemidsCsv: '' });
-
-    const toggleItem = (itemid) => {
-        const next = new Set(selectedItemIds);
-        if (next.has(itemid)) {
-            next.delete(itemid);
-        }
-        else {
-            next.add(itemid);
-        }
-        setIdsCsv('itemidsCsv', next);
-    };
-
-    const clearItemSelection = () => updateSettings({ itemidsCsv: '' });
-
-    const selectAllFoundItems = (datasetIdx) => {
-        const suggestions = itemSuggestionsByDataset[datasetIdx] || [];
-        const next = new Set(selectedItemIds);
-        suggestions.forEach((item) => next.add(String(item.itemid)));
-        setIdsCsv('itemidsCsv', next);
-    };
+    const clearHostSelection = () => updateSettings({ hostidsCsv: '' });
 
     const toggleGroup = (name) => {
         setCollapsedGroups((prev) => ({ ...prev, [name]: !prev[name] }));
@@ -733,7 +639,7 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                                         const groupid = e.target.value;
                                         setHostPickerOpen(false);
                                         setHostSearchTerm('');
-                                        updateSettings({ groupid, hostidsCsv: '', itemidsCsv: '' });
+                                        updateSettings({ groupid, hostidsCsv: '' });
                                         fetchHosts(groupid);
                                     }}
                                 >
@@ -774,20 +680,7 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                             <div className="editor-control">
                                 <div className="editor-datasets">
                                     {datasets.map((dataSet, idx) => {
-                                        const dataSetSuggestions = itemSuggestionsByDataset[idx] || [];
-                                        const dataSetLoading = !!itemsLoadingByDataset[idx];
                                         const dataSetMappings = getDatasetMappingRows(dataSet);
-                                        const suggestionListId = `timestate-filter-${String(widgetId || 'widget').replace(/[^a-zA-Z0-9_-]/g, '_')}-${idx}`;
-                                        const filterTypeaheadValues = Array.from(new Set(
-                                            dataSetSuggestions
-                                                .map((item) => {
-                                                    if (String(dataSet.filter_type || 'key') === 'name') {
-                                                        return String(item.name || item.label || '');
-                                                    }
-                                                    return String(item.key_ || item.label || '');
-                                                })
-                                                .filter((value) => value !== '')
-                                        )).slice(0, 80);
 
                                         return (
                                             <div key={`dataset-${idx}`} className={`editor-dataset ${idx === safeActiveDatasetIdx ? 'is-active' : ''}`}>
@@ -816,7 +709,6 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                                                         <input
                                                             type="text"
                                                             value={dataSet.filter_value}
-                                                            list={suggestionListId}
                                                             placeholder={dataSet.filter_type === 'key' ? 'bv. zabbix[*' : 'bv. CPU'}
                                                             onChange={(e) => updateDataset(idx, { filter_value: e.target.value, filter_exact: '0' })}
                                                         />
@@ -824,17 +716,17 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
 
                                                     <label>
                                                         <span className="editor-subtle">Max rows</span>
-                                                        <input type="number" min="1" max="200" value={dataSet.max_rows} onChange={(e) => updateDataset(idx, { max_rows: String(clampInt(Number(e.target.value) || 20, 1, 200)) })} />
+                                                        <input type="number" min="1" max={MAX_ROWS} value={dataSet.max_rows} onChange={(e) => updateDataset(idx, { max_rows: String(clampInt(Number(e.target.value) || 20, 1, MAX_ROWS)) })} />
                                                     </label>
 
                                                     <label>
                                                         <span className="editor-subtle">Lookback (hours)</span>
-                                                        <input type="number" min="1" max="744" value={dataSet.lookback_hours} onChange={(e) => updateDataset(idx, { lookback_hours: String(clampInt(Number(e.target.value) || 24, 1, 744)) })} />
+                                                        <input type="number" min="1" max={MAX_LOOKBACK_HOURS} value={dataSet.lookback_hours} onChange={(e) => updateDataset(idx, { lookback_hours: String(clampInt(Number(e.target.value) || 24, 1, MAX_LOOKBACK_HOURS)) })} />
                                                     </label>
 
                                                     <label>
                                                         <span className="editor-subtle">History points / item</span>
-                                                        <input type="number" min="10" max="5000" value={dataSet.history_points} onChange={(e) => updateDataset(idx, { history_points: String(clampInt(Number(e.target.value) || 500, 10, 5000)) })} />
+                                                        <input type="number" min="10" max={MAX_HISTORY_POINTS} value={dataSet.history_points} onChange={(e) => updateDataset(idx, { history_points: String(clampInt(Number(e.target.value) || 500, 10, MAX_HISTORY_POINTS)) })} />
                                                     </label>
 
                                                     <label>
@@ -867,41 +759,9 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                                                     </label>
                                                 </div>
 
-                                                <datalist id={suggestionListId}>
-                                                    {filterTypeaheadValues.map((value) => (
-                                                        <option key={value} value={value} />
-                                                    ))}
-                                                </datalist>
                                                 <div className="editor-subtle">Wildcards ondersteund: `*` en `?`.</div>
 
                                                 <div className="editor-picker-panel">
-                                                    <div className="editor-subtle"><strong>Find items</strong></div>
-                                                    <div className="editor-inline-actions">
-                                                        <button className="btn-zbx" type="button" onClick={() => fetchItemSuggestions(idx, dataSet)}>
-                                                            {dataSetLoading ? 'Searching...' : 'Search'}
-                                                        </button>
-                                                        <button className="btn-zbx" type="button" onClick={() => selectAllFoundItems(idx)} disabled={dataSetSuggestions.length === 0}>
-                                                            Select all found
-                                                        </button>
-                                                        <button className="btn-zbx" type="button" onClick={clearItemSelection}>Clear selected</button>
-                                                        <span className="editor-subtle">Selected: {selectedItemIds.size}</span>
-                                                    </div>
-
-                                                    <div className="editor-subtle"><strong>Item matches</strong></div>
-                                                    <div className="editor-item-list">
-                                                        {dataSetSuggestions.length === 0 && <div className="editor-subtle">Type filter and wait, or click Search.</div>}
-                                                        {dataSetSuggestions.map((item) => (
-                                                            <label key={item.itemid} className="editor-item-entry">
-                                                                <input
-                                                                    type="checkbox"
-                                                                    checked={selectedItemIds.has(String(item.itemid))}
-                                                                    onChange={() => toggleItem(String(item.itemid))}
-                                                                />
-                                                                <span title={item.label}>{item.label}</span>
-                                                            </label>
-                                                        ))}
-                                                    </div>
-
                                                     <div className="editor-subtle"><strong>Value mappings</strong></div>
                                                     <div className="editor-mapping-list">
                                                         {dataSetMappings.map((row, mappingIdx) => (
@@ -945,7 +805,8 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                                         );
                                     })}
 
-                                    <button className="btn-zbx" type="button" onClick={addDataset}>+ Add data source</button>
+                                    <button className="btn-zbx" type="button" onClick={addDataset} disabled={datasets.length >= MAX_DATASETS}>+ Add data source</button>
+                                    {datasets.length >= MAX_DATASETS && <div className="editor-subtle">Maximum {MAX_DATASETS} data sources bereikt.</div>}
                                 </div>
                             </div>
                         </div>
