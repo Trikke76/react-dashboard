@@ -5,12 +5,12 @@ $page->addItem((new CDiv(''))->setId('react-root'));
 $page->show();
 ?>
 
-<script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-<script src="https://unpkg.com/lodash@4.17.21/lodash.min.js"></script>
-<script src="https://unpkg.com/react-grid-layout@1.3.4/dist/react-grid-layout.min.js"></script>
-<link rel="stylesheet" href="https://unpkg.com/react-grid-layout@1.3.4/css/styles.css">
+<script src="https://unpkg.com/react@18/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js" integrity="sha384-Fo0OdKhdnE7y2WmzjOMW4PYjHkkANeu1501pWTqKrzAPeJMFQb4ZTdAA9dtrVUJV" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/lodash@4.17.21/lodash.min.js" integrity="sha384-H6KKS1H1WwuERMSm+54dYLzjg0fKqRK5ZRyASdbrI/lwrCc6bXEmtGYr5SwvP1pZ" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-grid-layout@1.3.4/dist/react-grid-layout.min.js" integrity="sha384-PMbm/Us//mtmFQhmt5dDcZ9dGQ9JETuWPP1XMrUTSSom54+ALzXwWFZbcVxIUW8C" crossorigin="anonymous"></script>
+<link rel="stylesheet" href="https://unpkg.com/react-grid-layout@1.3.4/css/styles.css" integrity="sha384-nGjHHKSA2do+/Ysq7iVR0BAmx0k68mY3XcGReJJ3LUu7bdewE5rLWUPJw+UoQKer" crossorigin="anonymous">
 
 <style>
     :root {
@@ -633,8 +633,13 @@ $zabbix_config = [
 $widgets_dir = $data['module_path'] . '/assets/js/widgets';
 $timestate_widget_file = $widgets_dir . '/TimeStateWidget.js';
 if (is_file($timestate_widget_file)) {
+    $widget_script = file_get_contents($timestate_widget_file);
+    if ($widget_script === false) {
+        $widget_script = '';
+    }
+    $widget_script = preg_replace('~</script~i', '<\\/script', $widget_script);
     echo '<script type="text/babel" data-presets="react">' . "\n";
-    echo file_get_contents($timestate_widget_file);
+    echo $widget_script;
     echo "\n</script>\n";
 }
 ?>

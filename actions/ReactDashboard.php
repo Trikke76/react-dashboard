@@ -12,9 +12,15 @@ class ReactDashboard extends CController {
     private const DEFAULT_MAX_ROWS = 20;
     private const DEFAULT_HISTORY_POINTS = 500;
     private const DEFAULT_STATE_MAP = 'value:1=OK|#2E7D32,value:0=Problem|#C62828';
-    private const MAX_DATASETS = 20;
+    private const MAX_DATASETS = 10;
     private const MAX_STATE_MAP_LENGTH = 2048;
     private const MAX_REGEX_PATTERN_LENGTH = 128;
+    private const MAX_LOOKBACK_HOURS = 24 * 14;
+    private const MAX_ROWS = 100;
+    private const MAX_HISTORY_POINTS = 2000;
+    private const MAX_ITEM_QUERY_LIMIT = 1200;
+    private const MAX_HISTORY_CALLS_PER_REQUEST = 250;
+    private const MAX_ITEMS_EVALUATED_PER_REQUEST = 400;
 
     protected function init(): void {
         $this->disableCsrfValidation();
@@ -104,7 +110,7 @@ class ReactDashboard extends CController {
         if ($action === 'timestate_items') {
             $hostids = $this->parseIds((string) $this->req('hostids_csv', ''));
             [$filter_mode, $item_filter] = $this->resolveFilterInput();
-            $max_rows = $this->clampInt((int) $this->req('max_rows', 20), 1, 200);
+            $max_rows = $this->clampInt((int) $this->req('max_rows', 20), 1, self::MAX_ROWS);
             $filter_exact = ((int) $this->req('filter_exact', 0)) === 1;
 
             if ($hostids === []) {
@@ -116,7 +122,7 @@ class ReactDashboard extends CController {
                 'selectHosts' => ['name'],
                 'hostids' => $hostids,
                 'monitored' => true,
-                'limit' => min(5000, $max_rows * 10)
+                'limit' => min(self::MAX_ITEM_QUERY_LIMIT, $max_rows * 10)
             ];
 
             if ($item_filter !== '') {
@@ -180,9 +186,9 @@ class ReactDashboard extends CController {
                 'filter_type' => $legacy_filter_mode,
                 'filter_value' => $legacy_item_filter,
                 'filter_exact' => ((int) $this->req('filter_exact', 0)) === 1 ? 1 : 0,
-                'lookback_hours' => $this->clampInt((int) $this->req('lookback_hours', self::DEFAULT_LOOKBACK_HOURS), 1, 24 * 31),
-                'max_rows' => $this->clampInt((int) $this->req('max_rows', self::DEFAULT_MAX_ROWS), 1, 200),
-                'history_points' => $this->clampInt((int) $this->req('history_points', self::DEFAULT_HISTORY_POINTS), 50, 5000),
+                'lookback_hours' => $this->clampInt((int) $this->req('lookback_hours', self::DEFAULT_LOOKBACK_HOURS), 1, self::MAX_LOOKBACK_HOURS),
+                'max_rows' => $this->clampInt((int) $this->req('max_rows', self::DEFAULT_MAX_ROWS), 1, self::MAX_ROWS),
+                'history_points' => $this->clampInt((int) $this->req('history_points', self::DEFAULT_HISTORY_POINTS), 50, self::MAX_HISTORY_POINTS),
                 'merge_equal_states' => ((int) $this->req('merge_equal_states', 1)) === 1 ? 1 : 0,
                 'merge_shorter_than' => $this->clampInt((int) $this->req('merge_shorter_than', 0), 0, 3600),
                 'null_gap_mode' => ((int) $this->req('null_gap_mode', 0)) === 1 ? 1 : 0,
@@ -196,8 +202,14 @@ class ReactDashboard extends CController {
             $base_colors = $this->buildBaseColorMap();
             $rows = [];
             $seen_itemids = [];
+            $history_call_budget = self::MAX_HISTORY_CALLS_PER_REQUEST;
+            $item_eval_budget = self::MAX_ITEMS_EVALUATED_PER_REQUEST;
 
             foreach ($datasets as $data_set_idx => $data_set) {
+                if ($history_call_budget <= 0 || $item_eval_budget <= 0) {
+                    break;
+                }
+
                 $lookback_hours = (int) $data_set['lookback_hours'];
                 $dataset_time_from = $time_to - ($lookback_hours * 3600);
                 $global_time_from = min($global_time_from, $dataset_time_from);
@@ -206,7 +218,7 @@ class ReactDashboard extends CController {
                     'output' => ['itemid', 'name', 'key_', 'value_type'],
                     'selectHosts' => ['name'],
                     'monitored' => true,
-                    'limit' => ((int) $data_set['max_rows']) * 8
+                    'limit' => min(self::MAX_ITEM_QUERY_LIMIT, ((int) $data_set['max_rows']) * 8)
                 ];
 
                 if ($hostids !== []) {
@@ -252,9 +264,13 @@ class ReactDashboard extends CController {
                 $rules = is_array($data_set['rules']) ? $data_set['rules'] : [];
 
                 foreach ($items as $item) {
-                    if ($rows_from_dataset >= (int) $data_set['max_rows']) {
+                    if ($rows_from_dataset >= (int) $data_set['max_rows']
+                        || $history_call_budget <= 0
+                        || $item_eval_budget <= 0
+                    ) {
                         break;
                     }
+                    $item_eval_budget--;
 
                     $itemid = (string) ($item['itemid'] ?? '');
                     if ($itemid === '' || isset($seen_itemids[$itemid])) {
@@ -276,6 +292,7 @@ class ReactDashboard extends CController {
                         'sortorder' => 'ASC',
                         'limit' => (int) $data_set['history_points']
                     ]) ?: [];
+                    $history_call_budget--;
 
                     $segments = $this->buildSegments(
                         $history,
@@ -368,7 +385,13 @@ class ReactDashboard extends CController {
 
     private function respondJson($payload): void {
         header('Content-Type: application/json; charset=utf-8');
-        echo json_encode($payload);
+        $json = json_encode($payload, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
+        if ($json === false) {
+            http_response_code(500);
+            echo '{"error":"JSON encoding failed"}';
+            exit;
+        }
+        echo $json;
         exit;
     }
 
@@ -452,9 +475,9 @@ class ReactDashboard extends CController {
     }
 
     private function normalizeDataSet(array $entry): array {
-        $lookback_hours = $this->clampInt((int) ($entry['lookback_hours'] ?? self::DEFAULT_LOOKBACK_HOURS), 1, 24 * 31);
-        $max_rows = $this->clampInt((int) ($entry['max_rows'] ?? self::DEFAULT_MAX_ROWS), 1, 200);
-        $history_points = $this->clampInt((int) ($entry['history_points'] ?? self::DEFAULT_HISTORY_POINTS), 10, 5000);
+        $lookback_hours = $this->clampInt((int) ($entry['lookback_hours'] ?? self::DEFAULT_LOOKBACK_HOURS), 1, self::MAX_LOOKBACK_HOURS);
+        $max_rows = $this->clampInt((int) ($entry['max_rows'] ?? self::DEFAULT_MAX_ROWS), 1, self::MAX_ROWS);
+        $history_points = $this->clampInt((int) ($entry['history_points'] ?? self::DEFAULT_HISTORY_POINTS), 10, self::MAX_HISTORY_POINTS);
         $merge_shorter_than = $this->clampInt((int) ($entry['merge_shorter_than'] ?? 0), 0, 3600);
         $state_map_raw = trim((string) ($entry['state_map'] ?? self::DEFAULT_STATE_MAP));
         $state_map_raw = substr($state_map_raw, 0, self::MAX_STATE_MAP_LENGTH);
