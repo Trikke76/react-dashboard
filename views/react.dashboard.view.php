@@ -305,6 +305,37 @@ $page->show();
         max-height: 220px;
     }
 
+    .editor-modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 18, 24, 0.62);
+        z-index: 1200;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 14px;
+    }
+
+    .editor-modal {
+        width: min(760px, 100%);
+        max-height: min(80vh, 760px);
+        background: var(--panel-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .editor-modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 10px;
+        gap: 8px;
+    }
+
     .editor-picker-panel {
         margin-top: 8px;
         border: 1px solid var(--border-color);
@@ -314,6 +345,64 @@ $page->show();
         display: flex;
         flex-direction: column;
         gap: 8px;
+    }
+
+    .editor-datasets {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .editor-dataset {
+        border: 1px solid var(--border-color);
+        border-radius: 3px;
+        background: var(--segment-bg);
+        padding: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .editor-dataset.is-active {
+        border-color: #7f9fba;
+        box-shadow: inset 0 0 0 1px rgba(138, 177, 206, 0.25);
+    }
+
+    .editor-dataset-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+    }
+
+    .editor-dataset-grid > label {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .editor-dataset-grid > label.is-full {
+        grid-column: 1 / -1;
+    }
+
+    .timestate-group {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .timestate-group-header {
+        width: 100%;
+        border: 1px solid var(--border-color);
+        background: var(--segment-bg);
+        color: var(--text-color);
+        border-radius: 2px;
+        padding: 4px 8px;
+        font-size: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        cursor: pointer;
     }
 
     .editor-host-item,
@@ -511,6 +600,7 @@ $page->show();
 
     @media (max-width: 900px) {
         .editor-grid { grid-template-columns: 1fr; }
+        .editor-dataset-grid { grid-template-columns: 1fr; }
         .timestate-row { grid-template-columns: 1fr; gap: 4px; }
     }
 </style>
@@ -969,13 +1059,12 @@ if (is_file($timestate_widget_file)) {
         itemidsCsv: '',
         filterMode: 'key',
         itemFilter: '',
-        lookbackHours: 24,
-        maxRows: 20,
-        historyPoints: 500,
         rowSort: 0,
-        mergeEqual: 1,
+        rowGroupMode: 0,
+        rowGroupCollapsed: 0,
         refreshSec: 30,
-        stateMap: 'value:0=OK|#2E7D32,value:1=Problem|#C62828'
+        datasetsJson: '',
+        stateMap: 'value:1=OK|#2E7D32,value:0=Problem|#C62828'
     };
 
     const widgetDefaultsByType = (type) => {
