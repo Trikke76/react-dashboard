@@ -100,8 +100,7 @@ class ReactDashboard extends CController {
 
         if ($action === 'timestate_items') {
             $hostids = $this->parseIds((string) $this->req('hostids_csv', ''));
-            $item_key_search = trim((string) $this->req('item_key_search', ''));
-            $item_name_search = trim((string) $this->req('item_name_search', ''));
+            [$filter_mode, $item_filter] = $this->resolveFilterInput();
             $max_rows = $this->clampInt((int) $this->req('max_rows', 20), 1, 200);
             $filter_exact = ((int) $this->req('filter_exact', 0)) === 1;
 
@@ -117,29 +116,23 @@ class ReactDashboard extends CController {
                 'limit' => min(5000, $max_rows * 10)
             ];
 
-            $search = [];
-            if ($item_key_search !== '') {
-                $search['key_'] = $this->normalizeSearchPattern($item_key_search);
-            }
-            if ($item_name_search !== '') {
-                $search['name'] = $this->normalizeSearchPattern($item_name_search);
-            }
-            if ($search !== []) {
-                $params['search'] = $search;
-                $params['searchByAny'] = true;
+            if ($item_filter !== '') {
+                $search_field = $filter_mode === 'name' ? 'name' : 'key_';
+                $params['search'] = [
+                    $search_field => $this->normalizeSearchPattern($item_filter)
+                ];
                 $params['searchWildcardsEnabled'] = true;
             }
 
             $items = API::Item()->get($params) ?: [];
             if ($filter_exact) {
-                $items = array_values(array_filter($items, static function(array $item) use ($item_key_search, $item_name_search): bool {
-                    if ($item_key_search !== '') {
-                        return strcasecmp((string) ($item['key_'] ?? ''), $item_key_search) === 0;
+                $items = array_values(array_filter($items, static function(array $item) use ($item_filter, $filter_mode): bool {
+                    if ($item_filter === '') {
+                        return true;
                     }
-                    if ($item_name_search !== '') {
-                        return strcasecmp((string) ($item['name'] ?? ''), $item_name_search) === 0;
-                    }
-                    return true;
+
+                    $field = $filter_mode === 'name' ? 'name' : 'key_';
+                    return strcasecmp((string) ($item[$field] ?? ''), $item_filter) === 0;
                 }));
             }
 
@@ -178,8 +171,7 @@ class ReactDashboard extends CController {
                 $this->respondJson(['error' => 'Selecteer minstens een host of item.']);
             }
 
-            $item_key_search = trim((string) $this->req('item_key_search', ''));
-            $item_name_search = trim((string) $this->req('item_name_search', ''));
+            [$filter_mode, $item_filter] = $this->resolveFilterInput();
             $lookback_hours = $this->clampInt((int) $this->req('lookback_hours', 24), 1, 24 * 31);
             $max_rows = $this->clampInt((int) $this->req('max_rows', 20), 1, 200);
             $history_points = $this->clampInt((int) $this->req('history_points', 500), 50, 5000);
@@ -204,16 +196,11 @@ class ReactDashboard extends CController {
                 $params['itemids'] = $itemids;
             }
 
-            $search = [];
-            if ($item_key_search !== '') {
-                $search['key_'] = $this->normalizeSearchPattern($item_key_search);
-            }
-            if ($item_name_search !== '') {
-                $search['name'] = $this->normalizeSearchPattern($item_name_search);
-            }
-            if ($itemids === [] && $search !== []) {
-                $params['search'] = $search;
-                $params['searchByAny'] = true;
+            if ($itemids === [] && $item_filter !== '') {
+                $search_field = $filter_mode === 'name' ? 'name' : 'key_';
+                $params['search'] = [
+                    $search_field => $this->normalizeSearchPattern($item_filter)
+                ];
                 $params['searchWildcardsEnabled'] = true;
             }
 
@@ -334,6 +321,33 @@ class ReactDashboard extends CController {
 
     private function clampInt(int $value, int $min, int $max): int {
         return max($min, min($max, $value));
+    }
+
+    private function resolveFilterInput(): array {
+        $filter_mode = strtolower(trim((string) $this->req('filter_mode', 'key')));
+        $filter_mode = $filter_mode === 'name' ? 'name' : 'key';
+
+        $item_filter = trim((string) $this->req('item_filter', ''));
+        if ($item_filter !== '') {
+            return [$filter_mode, $item_filter];
+        }
+
+        $legacy_key = trim((string) $this->req('item_key_search', ''));
+        $legacy_name = trim((string) $this->req('item_name_search', ''));
+        if ($legacy_key === '' && $legacy_name === '') {
+            return [$filter_mode, ''];
+        }
+
+        if ($legacy_name !== '' && $legacy_key === '') {
+            return ['name', $legacy_name];
+        }
+        if ($legacy_key !== '' && $legacy_name === '') {
+            return ['key', $legacy_key];
+        }
+
+        return $filter_mode === 'name'
+            ? ['name', $legacy_name]
+            : ['key', $legacy_key];
     }
 
     private function normalizeSearchPattern(string $value): string {

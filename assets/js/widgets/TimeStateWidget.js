@@ -8,6 +8,8 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
         groupid: '',
         hostidsCsv: '',
         itemidsCsv: '',
+        filterMode: 'key',
+        itemFilter: '',
         itemKeySearch: '',
         itemNameSearch: '',
         lookbackHours: 24,
@@ -122,6 +124,68 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
 
     const selectedHostIds = useMemo(() => new Set(parseCsvIds(cfg.hostidsCsv)), [cfg.hostidsCsv]);
     const selectedItemIds = useMemo(() => new Set(parseCsvIds(cfg.itemidsCsv)), [cfg.itemidsCsv]);
+    const filterSuggestionListId = useMemo(() => {
+        const raw = String(widgetId || 'default');
+        return `timestate-filter-${raw.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+    }, [widgetId]);
+    const activeFilterMode = useMemo(() => {
+        const mode = String(cfg.filterMode || '').toLowerCase();
+        if (mode === 'key' || mode === 'name') {
+            return mode;
+        }
+
+        const legacyKey = String(cfg.itemKeySearch || '').trim();
+        const legacyName = String(cfg.itemNameSearch || '').trim();
+        if (legacyName !== '' && legacyKey === '') {
+            return 'name';
+        }
+
+        return 'key';
+    }, [cfg.filterMode, cfg.itemKeySearch, cfg.itemNameSearch]);
+    const activeItemFilter = useMemo(() => {
+        const modern = String(cfg.itemFilter || '').trim();
+        if (modern !== '') {
+            return modern;
+        }
+
+        const legacyKey = String(cfg.itemKeySearch || '').trim();
+        const legacyName = String(cfg.itemNameSearch || '').trim();
+        if (legacyKey === '' && legacyName === '') {
+            return '';
+        }
+
+        return activeFilterMode === 'name' ? (legacyName || legacyKey) : (legacyKey || legacyName);
+    }, [cfg.itemFilter, cfg.itemKeySearch, cfg.itemNameSearch, activeFilterMode]);
+    const filterTypeaheadValues = useMemo(() => {
+        const values = itemSuggestions
+            .map((item) => activeFilterMode === 'name' ? String(item.name || '') : String(item.key_ || ''))
+            .map((value) => value.trim())
+            .filter(Boolean);
+
+        return Array.from(new Set(values)).slice(0, 200);
+    }, [itemSuggestions, activeFilterMode]);
+
+    useEffect(() => {
+        const modernFilter = String(cfg.itemFilter || '').trim();
+        const legacyKey = String(cfg.itemKeySearch || '').trim();
+        const legacyName = String(cfg.itemNameSearch || '').trim();
+        if (modernFilter !== '' || (legacyKey === '' && legacyName === '')) {
+            return;
+        }
+
+        const migratedMode = legacyName !== '' && legacyKey === '' ? 'name' : 'key';
+        const migratedFilter = migratedMode === 'name' ? legacyName : legacyKey;
+        if (migratedFilter === '') {
+            return;
+        }
+
+        updateSettings({
+            filterMode: migratedMode,
+            itemFilter: migratedFilter,
+            itemKeySearch: '',
+            itemNameSearch: ''
+        });
+    }, [cfg.itemFilter, cfg.itemKeySearch, cfg.itemNameSearch, updateSettings]);
 
     const requestJson = useCallback(async (params) => {
         if (apiClient && typeof apiClient.requestJson === 'function') {
@@ -178,8 +242,8 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
             const payload = await cachedJson({
                 action_type: 'timestate_items',
                 hostids_csv: String(cfg.hostidsCsv || ''),
-                item_key_search: String(cfg.itemKeySearch || ''),
-                item_name_search: String(cfg.itemNameSearch || ''),
+                filter_mode: activeFilterMode,
+                item_filter: activeItemFilter,
                 max_rows: String(Math.max(1, Number(cfg.maxRows || 20)))
             }, 6000);
 
@@ -191,7 +255,7 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
         finally {
             setItemsLoading(false);
         }
-    }, [cachedJson, cfg.hostidsCsv, cfg.itemKeySearch, cfg.itemNameSearch, cfg.maxRows]);
+    }, [cachedJson, cfg.hostidsCsv, activeFilterMode, activeItemFilter, cfg.maxRows]);
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -202,8 +266,8 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                 action_type: 'timestate_data',
                 hostids_csv: String(cfg.hostidsCsv || ''),
                 itemids_csv: String(cfg.itemidsCsv || ''),
-                item_key_search: String(cfg.itemKeySearch || ''),
-                item_name_search: String(cfg.itemNameSearch || ''),
+                filter_mode: activeFilterMode,
+                item_filter: activeItemFilter,
                 lookback_hours: String(cfg.lookbackHours || 24),
                 max_rows: String(cfg.maxRows || 20),
                 history_points: String(cfg.historyPoints || 500),
@@ -229,8 +293,8 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
         requestJson,
         cfg.hostidsCsv,
         cfg.itemidsCsv,
-        cfg.itemKeySearch,
-        cfg.itemNameSearch,
+        activeFilterMode,
+        activeItemFilter,
         cfg.lookbackHours,
         cfg.maxRows,
         cfg.historyPoints,
@@ -279,7 +343,7 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
         }, 350);
 
         return () => clearTimeout(timer);
-    }, [editMode, cfg.hostidsCsv, cfg.itemKeySearch, cfg.itemNameSearch, cfg.maxRows, fetchItemSuggestions]);
+    }, [editMode, cfg.hostidsCsv, activeFilterMode, activeItemFilter, cfg.maxRows, fetchItemSuggestions]);
 
     useEffect(() => {
         if (!editMode) {
@@ -505,14 +569,43 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                                 </div>
                             </div>
 
-                            <div className="editor-label">Item key filter</div>
+                            <div className="editor-label">Filter by</div>
                             <div className="editor-control">
-                                <input type="text" value={cfg.itemKeySearch} onChange={(e) => updateSettings({ itemKeySearch: e.target.value })} />
+                                <div className="editor-segment">
+                                    <button
+                                        type="button"
+                                        className={activeFilterMode === 'key' ? 'active' : ''}
+                                        onClick={() => updateSettings({ filterMode: 'key', itemidsCsv: '' })}
+                                    >
+                                        Item key
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className={activeFilterMode === 'name' ? 'active' : ''}
+                                        onClick={() => updateSettings({ filterMode: 'name', itemidsCsv: '' })}
+                                    >
+                                        Item name
+                                    </button>
+                                </div>
                             </div>
 
-                            <div className="editor-label">Item name filter</div>
+                            <div className="editor-label">Item filter</div>
                             <div className="editor-control">
-                                <input type="text" value={cfg.itemNameSearch} onChange={(e) => updateSettings({ itemNameSearch: e.target.value })} />
+                                <input
+                                    type="text"
+                                    value={activeItemFilter}
+                                    onChange={(e) => updateSettings({ itemFilter: e.target.value, itemidsCsv: '' })}
+                                    list={filterSuggestionListId}
+                                    placeholder={activeFilterMode === 'key' ? 'bv. zabbix[*' : 'bv. CPU'}
+                                />
+                                <datalist id={filterSuggestionListId}>
+                                    {filterTypeaheadValues.map((value) => (
+                                        <option key={value} value={value} />
+                                    ))}
+                                </datalist>
+                                <div className="editor-subtle">
+                                    Wildcards ondersteund: `*` en `?`. Resultaten laden automatisch tijdens typen.
+                                </div>
                             </div>
 
                             <div className="editor-label">Find items</div>
