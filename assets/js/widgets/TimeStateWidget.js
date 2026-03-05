@@ -6,6 +6,8 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
     const MAX_ROWS = 100;
     const MAX_LOOKBACK_HOURS = 24 * 14;
     const MAX_HISTORY_POINTS = 2000;
+    const MAPPING_TYPES = new Set(['value', 'range', 'regex', 'special']);
+    const SPECIAL_MAPPING_VALUES = ['null', 'empty', 'nan', 'true', 'false', 'unknown'];
 
     const DEFAULT_DATASET = {
         name: '',
@@ -83,7 +85,8 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
             const left = equalIdx >= 0 ? chunk.slice(0, equalIdx).trim() : chunk.trim();
             const right = equalIdx >= 0 ? chunk.slice(equalIdx + 1).trim() : '';
             const colonIdx = left.indexOf(':');
-            const type = colonIdx >= 0 ? left.slice(0, colonIdx).trim() : 'value';
+            const typeRaw = (colonIdx >= 0 ? left.slice(0, colonIdx).trim() : 'value').toLowerCase();
+            const type = MAPPING_TYPES.has(typeRaw) ? typeRaw : 'value';
             const condition = colonIdx >= 0 ? left.slice(colonIdx + 1).trim() : left;
             const [text, color] = right.split('|');
 
@@ -132,18 +135,17 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
 
     const normalizeDataSet = (raw, fallbackFilter) => {
         const source = raw && typeof raw === 'object' ? raw : {};
+        const hasOwn = (key) => Object.prototype.hasOwnProperty.call(source, key);
         const legacyFilterType = String(source.item_name_search || '').trim() !== '' && String(source.item_key_search || '').trim() === ''
             ? 'name'
             : fallbackFilter.type;
         const rawType = String(source.filter_type || legacyFilterType || 'key').toLowerCase();
         const filterType = rawType === 'name' ? 'name' : 'key';
-        const filterValue = String(
-            source.filter_value
-            || source.item_key_search
-            || source.item_name_search
-            || fallbackFilter.value
-            || ''
-        );
+        const filterValueSource = hasOwn('filter_value')
+            ? source.filter_value
+            : (source.item_key_search || source.item_name_search || fallbackFilter.value || '');
+        const filterValue = String(filterValueSource ?? '');
+        const stateMapSource = hasOwn('state_map') ? source.state_map : (cfg.stateMap || DEFAULT_STATE_MAP);
 
         return {
             name: String(source.name || ''),
@@ -157,7 +159,7 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
             merge_shorter_than: String(clampInt(Number(source.merge_shorter_than || 0) || 0, 0, 3600)),
             null_gap_mode: String(source.null_gap_mode ?? '0') === '1' ? '1' : '0',
             null_gap_backfill_first: String(source.null_gap_backfill_first ?? '0') === '1' ? '1' : '0',
-            state_map: String(source.state_map || cfg.stateMap || DEFAULT_STATE_MAP)
+            state_map: String(stateMapSource || DEFAULT_STATE_MAP)
         };
     };
 
@@ -487,9 +489,35 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
         }
         if (type === 'special') {
             const normalized = value.toLowerCase();
-            return ['null', 'empty', 'nan'].includes(normalized) ? normalized : 'null';
+            return SPECIAL_MAPPING_VALUES.includes(normalized) ? normalized : 'null';
         }
         return value !== '' ? value : '1';
+    };
+
+    const splitRangeCondition = (condition) => {
+        const value = String(condition || '').trim();
+        if (value === '') {
+            return { from: '', to: '' };
+        }
+
+        const separatorIndex = value.indexOf('..');
+        if (separatorIndex === -1) {
+            return { from: value, to: '' };
+        }
+
+        return {
+            from: value.slice(0, separatorIndex).trim(),
+            to: value.slice(separatorIndex + 2).trim()
+        };
+    };
+
+    const buildRangeCondition = (from, to) => {
+        const left = String(from || '').trim();
+        const right = String(to || '').trim();
+        if (left === '' && right === '') {
+            return '';
+        }
+        return `${left}..${right}`;
     };
 
     const mappingConditionPlaceholder = (type) => {
@@ -507,29 +535,48 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
 
     const mappingConditionHint = (type) => {
         if (type === 'range') {
-            return 'Range: min..max (bv. 80..100)';
+            return 'Range: van/tot (min..max). Leeg min/max is toegestaan.';
         }
         if (type === 'regex') {
             return 'Regex: /pattern/ (bv. /^ERR.*/)';
         }
         if (type === 'special') {
-            return 'Special: null, empty, nan';
+            return 'Special: null, empty, nan, true, false, unknown';
         }
         return 'Exacte waarde (bv. 0 of 1)';
     };
 
     const handleMappingTypeChange = (datasetIdx, mappingIdx, nextTypeRaw) => {
-        const nextType = ['value', 'range', 'regex', 'special'].includes(nextTypeRaw) ? nextTypeRaw : 'value';
+        const normalizedType = String(nextTypeRaw || '').toLowerCase();
+        const nextType = MAPPING_TYPES.has(normalizedType) ? normalizedType : 'value';
+        const rows = getDatasetMappingRows(datasets[datasetIdx] || DEFAULT_DATASET);
+        const row = rows[mappingIdx];
+        if (!row) {
+            return;
+        }
+        const changedType = String(row.type || 'value') !== nextType;
+
+        rows[mappingIdx] = {
+            ...row,
+            type: nextType,
+            condition: normalizeMappingCondition(nextType, changedType ? '' : row.condition)
+        };
+        updateDataset(datasetIdx, { state_map: serializeMappings(rows) });
+    };
+
+    const handleRangeConditionChange = (datasetIdx, mappingIdx, bound, value) => {
         const rows = getDatasetMappingRows(datasets[datasetIdx] || DEFAULT_DATASET);
         const row = rows[mappingIdx];
         if (!row) {
             return;
         }
 
+        const current = splitRangeCondition(row.condition);
+        const nextFrom = bound === 'from' ? value : current.from;
+        const nextTo = bound === 'to' ? value : current.to;
         rows[mappingIdx] = {
             ...row,
-            type: nextType,
-            condition: normalizeMappingCondition(nextType, row.condition)
+            condition: buildRangeCondition(nextFrom, nextTo)
         };
         updateDataset(datasetIdx, { state_map: serializeMappings(rows) });
     };
@@ -959,7 +1006,27 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                                                                         <option value="regex">regex</option>
                                                                         <option value="special">special</option>
                                                                     </select>
-                                                                    {row.type === 'special' ? (
+                                                                    {row.type === 'range' ? (
+                                                                        (() => {
+                                                                            const bounds = splitRangeCondition(row.condition);
+                                                                            return (
+                                                                                <div className="editor-inline-actions" style={{ gap: '4px' }}>
+                                                                                    <input
+                                                                                        type="text"
+                                                                                        value={bounds.from}
+                                                                                        onChange={(e) => handleRangeConditionChange(idx, mappingIdx, 'from', e.target.value)}
+                                                                                        placeholder="from"
+                                                                                    />
+                                                                                    <input
+                                                                                        type="text"
+                                                                                        value={bounds.to}
+                                                                                        onChange={(e) => handleRangeConditionChange(idx, mappingIdx, 'to', e.target.value)}
+                                                                                        placeholder="to"
+                                                                                    />
+                                                                                </div>
+                                                                            );
+                                                                        })()
+                                                                    ) : row.type === 'special' ? (
                                                                         <select
                                                                             value={normalizeMappingCondition('special', row.condition)}
                                                                             onChange={(e) => updateDatasetMapping(idx, mappingIdx, { condition: e.target.value })}
@@ -967,6 +1034,9 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                                                                             <option value="null">null</option>
                                                                             <option value="empty">empty</option>
                                                                             <option value="nan">nan</option>
+                                                                            <option value="true">true</option>
+                                                                            <option value="false">false</option>
+                                                                            <option value="unknown">unknown</option>
                                                                         </select>
                                                                     ) : (
                                                                         <input

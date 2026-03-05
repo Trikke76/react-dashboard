@@ -1193,17 +1193,38 @@ if (is_file($timestate_widget_file)) {
         if (!Array.isArray(items)) {
             return [];
         }
+        const seenKeys = new Set();
 
         return items
             .slice(0, 60)
             .filter((item) => item && typeof item === 'object')
-            .map((item, index) => mergeWithDefaults(item, `w${index + 1}`));
+            .map((item, index) => {
+                const merged = mergeWithDefaults(item, `w${index + 1}`);
+                let key = merged.i;
+                if (seenKeys.has(key)) {
+                    let suffix = 2;
+                    while (seenKeys.has(`${key}_${suffix}`)) {
+                        suffix += 1;
+                    }
+                    key = `${key}_${suffix}`;
+                }
+                seenKeys.add(key);
+                return { ...merged, i: key };
+            });
     };
 
     const saveLayoutLocal = (items) => {
         const safeItems = sanitizeLayout(items);
         localStorage.setItem('zbx_layout_v4', JSON.stringify(safeItems));
         return safeItems;
+    };
+
+    const createWidgetId = (existingIds) => {
+        let id = '';
+        do {
+            id = `w${Date.now()}_${Math.floor(Math.random() * 1000000)}`;
+        } while (existingIds.has(id));
+        return id;
     };
 
     const App = () => {
@@ -1233,12 +1254,13 @@ if (is_file($timestate_widget_file)) {
         });
 
         const onLayoutChange = (newLayout) => {
-            const merged = newLayout.map((item) => {
-                const old = layout.find((w) => w.i === item.i) || { type: 'Clock' };
-                return mergeWithDefaults({ ...old, ...item }, old.i || `w${Date.now()}`);
+            setLayout((prev) => {
+                const merged = newLayout.map((item) => {
+                    const old = prev.find((w) => w.i === item.i) || { type: 'Clock', i: item.i };
+                    return mergeWithDefaults({ ...old, ...item }, old.i || item.i || 'w1');
+                });
+                return saveLayoutLocal(merged);
             });
-            const safe = saveLayoutLocal(merged);
-            setLayout(safe);
         };
 
         const updateWidget = (id, patch) => {
@@ -1271,16 +1293,18 @@ if (is_file($timestate_widget_file)) {
         const addWidget = (type) => {
             const defaults = widgetDefaultsByType(type);
             setLayout((prev) => {
+                const existingIds = new Set(prev.map((item) => String(item.i || '')));
+                const widgetId = createWidgetId(existingIds);
                 const next = [
                     ...prev,
                     mergeWithDefaults({
-                        i: `w${Date.now()}`,
+                        i: widgetId,
                         x: 0,
                         y: Infinity,
                         w: type === 'TimeState' ? 8 : 4,
                         h: type === 'TimeState' ? 10 : 8,
                         ...defaults
-                    }, `w${Date.now()}`)
+                    }, widgetId)
                 ];
                 return saveLayoutLocal(next);
             });
