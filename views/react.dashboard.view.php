@@ -504,7 +504,7 @@ $page->show();
     <?php $module_base = rtrim(dirname($_SERVER['SCRIPT_NAME']), '/'); ?>
     window.ZABBIX_CONFIG = {
         module_base: '<?php echo $module_base; ?>',
-        api_url: '<?php echo $module_base; ?>/modules/react-dashboard/api.php',
+        api_url: '<?php echo $module_base; ?>/zabbix.php?action=react.dashboard',
         api_fallback_url: '<?php echo $module_base; ?>/modules/react-dashboard/api.php'
     };
 </script>
@@ -528,6 +528,8 @@ if (is_file($timestate_widget_file)) {
         const candidates = Array.from(new Set([
             config && config.api_url,
             config && config.api_fallback_url,
+            `${moduleBase}/zabbix.php?action=react.dashboard`,
+            'zabbix.php?action=react.dashboard',
             `${moduleBase}/modules/react-dashboard/modules/react-dashboard/api.php`,
             `${moduleBase}/modules/react-dashboard/api.php`,
             'modules/react-dashboard/modules/react-dashboard/api.php',
@@ -550,7 +552,8 @@ if (is_file($timestate_widget_file)) {
             let lastError = null;
 
             for (const base of candidates) {
-                const url = `${base}?${params.toString()}`;
+                const separator = String(base).includes('?') ? '&' : '?';
+                const url = `${base}${separator}${params.toString()}`;
                 try {
                     const response = await fetch(url, { headers: { Accept: 'application/json' } });
                     const text = await response.text();
