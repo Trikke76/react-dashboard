@@ -504,7 +504,6 @@ $page->show();
     <?php $module_base = rtrim(dirname($_SERVER['SCRIPT_NAME']), '/'); ?>
     window.ZABBIX_CONFIG = {
         module_base: '<?php echo $module_base; ?>',
-        api_action_url: '<?php echo $module_base; ?>/zabbix.php?action=react.dashboard.api',
         api_url: '<?php echo $module_base; ?>/modules/react-dashboard/api.php',
         api_fallback_url: '<?php echo $module_base; ?>/modules/react-dashboard/api.php'
     };
@@ -534,10 +533,7 @@ if (is_file($timestate_widget_file)) {
             'modules/react-dashboard/modules/react-dashboard/api.php',
             'modules/react-dashboard/api.php',
             '/modules/react-dashboard/modules/react-dashboard/api.php',
-            '/modules/react-dashboard/api.php',
-            config && config.api_action_url,
-            `${moduleBase}/zabbix.php?action=react.dashboard.api`,
-            'zabbix.php?action=react.dashboard.api'
+            '/modules/react-dashboard/api.php'
         ].filter(Boolean)));
 
         const cache = new Map();
