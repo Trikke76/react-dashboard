@@ -10,6 +10,9 @@
             "class": "ReactDashboard",
             "view": "react.dashboard.view",
             "layout": "layout.htmlpage"
+        },
+        "react.dashboard.api": {
+            "class": "ReactDashboardApi"
         }
     }
 }

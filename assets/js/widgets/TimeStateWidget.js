@@ -127,12 +127,15 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId }) => {
         const zbxConfig = window.ZABBIX_CONFIG || {};
         const moduleBase = String(zbxConfig.module_base || '').replace(/\/+$/, '');
         return Array.from(new Set([
+            zbxConfig.api_action_url,
             zbxConfig.api_url,
             zbxConfig.api_fallback_url,
+            `${moduleBase}/zabbix.php?action=react.dashboard.api`,
             `${moduleBase}/modules/react-dashboard/modules/react-dashboard/api.php`,
             `${moduleBase}/modules/react-dashboard/api.php`,
             'modules/react-dashboard/modules/react-dashboard/api.php',
             'modules/react-dashboard/api.php',
+            'zabbix.php?action=react.dashboard.api',
             '/modules/react-dashboard/modules/react-dashboard/api.php',
             '/modules/react-dashboard/api.php'
         ].filter(Boolean)));

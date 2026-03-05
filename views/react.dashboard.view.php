@@ -504,6 +504,7 @@ $page->show();
     <?php $module_base = rtrim(dirname($_SERVER['SCRIPT_NAME']), '/'); ?>
     window.ZABBIX_CONFIG = {
         module_base: '<?php echo $module_base; ?>',
+        api_action_url: '<?php echo $module_base; ?>/zabbix.php?action=react.dashboard.api',
         api_url: '<?php echo $module_base; ?>/modules/react-dashboard/modules/react-dashboard/api.php',
         api_fallback_url: '<?php echo $module_base; ?>/modules/react-dashboard/api.php'
     };
@@ -898,6 +899,8 @@ if (is_file($timestate_widget_file)) {
     };
 
     const App = () => {
+        const gridWrapRef = useRef(null);
+        const [gridWidth, setGridWidth] = useState(1400);
         const [layout, setLayout] = useState(() => {
             const saved = localStorage.getItem('zbx_layout_v4');
             if (saved) {
@@ -953,8 +956,42 @@ if (is_file($timestate_widget_file)) {
             });
         };
 
+        useEffect(() => {
+            const updateGridWidth = () => {
+                if (!gridWrapRef.current) {
+                    return;
+                }
+                const rect = gridWrapRef.current.getBoundingClientRect();
+                if (rect.width > 0) {
+                    setGridWidth(Math.floor(rect.width));
+                }
+            };
+
+            updateGridWidth();
+
+            if (typeof ResizeObserver === 'undefined') {
+                window.addEventListener('resize', updateGridWidth);
+                return () => window.removeEventListener('resize', updateGridWidth);
+            }
+
+            const observer = new ResizeObserver(updateGridWidth);
+            observer.observe(gridWrapRef.current);
+            return () => observer.disconnect();
+        }, []);
+
+        const gridCols = gridWidth >= 1600 ? 36 : (gridWidth >= 1200 ? 24 : 12);
+
+        const normalizedLayout = useMemo(() => (
+            layout.map((item) => {
+                const safeW = Math.max(1, Math.min(item.w || 1, gridCols));
+                const maxX = Math.max(0, gridCols - safeW);
+                const safeX = Math.max(0, Math.min(item.x || 0, maxX));
+                return { ...item, w: safeW, x: safeX };
+            })
+        ), [layout, gridCols]);
+
         return (
-            <div style={{ padding: '20px' }}>
+            <div style={{ padding: '20px' }} ref={gridWrapRef}>
                 <button className="btn-zbx" style={{ marginBottom: 20, marginRight: 8, background: '#248ad2', borderColor: '#4aa1de' }} onClick={() => addWidget('Clock')}>
                     + Add Clock
                 </button>
@@ -964,10 +1001,10 @@ if (is_file($timestate_widget_file)) {
 
                 <GridLayout
                     className="layout"
-                    layout={layout}
-                    cols={12}
+                    layout={normalizedLayout}
+                    cols={gridCols}
                     rowHeight={30}
-                    width={1400}
+                    width={gridWidth}
                     draggableHandle=".widget-header"
                     onLayoutChange={onLayoutChange}
                 >
