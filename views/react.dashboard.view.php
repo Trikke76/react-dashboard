@@ -1229,7 +1229,16 @@ if (is_file($timestate_widget_file)) {
 
     const App = () => {
         const gridWrapRef = useRef(null);
-        const [gridWidth, setGridWidth] = useState(1400);
+        const [gridWidth, setGridWidth] = useState(() => {
+            const root = document.getElementById('react-root');
+            if (root) {
+                const width = Math.floor(root.getBoundingClientRect().width);
+                if (width > 0) {
+                    return width;
+                }
+            }
+            return 1400;
+        });
         const apiClient = useMemo(() => createDashboardApiClient(window.ZABBIX_CONFIG || {}), []);
         const [globalData, setGlobalData] = useState({ groups: [], refreshedAt: 0 });
         const [layout, setLayout] = useState(() => {
@@ -1253,15 +1262,55 @@ if (is_file($timestate_widget_file)) {
             }
         });
 
-        const onLayoutChange = (newLayout) => {
+        const mergeGridLayoutWithWidgets = useCallback((widgets, gridItems) => {
+            return gridItems.map((item) => {
+                const old = widgets.find((w) => w.i === item.i) || { type: 'Clock', i: item.i };
+                return mergeWithDefaults({ ...old, ...item }, old.i || item.i || 'w1');
+            });
+        }, []);
+
+        const hasSameGridGeometry = useCallback((left, right) => {
+            if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
+                return false;
+            }
+            const rightById = new Map(right.map((item) => [item.i, item]));
+            for (const item of left) {
+                const other = rightById.get(item.i);
+                if (!other) {
+                    return false;
+                }
+                if (item.x !== other.x || item.y !== other.y || item.w !== other.w || item.h !== other.h) {
+                    return false;
+                }
+            }
+            return true;
+        }, []);
+
+        const onLayoutChange = useCallback((newLayout) => {
+            // Keep controlled layout in sync, but don't persist automatic compaction/reflow events.
             setLayout((prev) => {
-                const merged = newLayout.map((item) => {
-                    const old = prev.find((w) => w.i === item.i) || { type: 'Clock', i: item.i };
-                    return mergeWithDefaults({ ...old, ...item }, old.i || item.i || 'w1');
-                });
+                const merged = mergeGridLayoutWithWidgets(prev, newLayout);
+                return hasSameGridGeometry(prev, merged) ? prev : merged;
+            });
+        }, [mergeGridLayoutWithWidgets, hasSameGridGeometry]);
+
+        const persistGridLayout = useCallback((newLayout) => {
+            setLayout((prev) => {
+                const merged = mergeGridLayoutWithWidgets(prev, newLayout);
+                if (hasSameGridGeometry(prev, merged)) {
+                    return prev;
+                }
                 return saveLayoutLocal(merged);
             });
-        };
+        }, [mergeGridLayoutWithWidgets, hasSameGridGeometry]);
+
+        const onDragStop = useCallback((newLayout) => {
+            persistGridLayout(newLayout);
+        }, [persistGridLayout]);
+
+        const onResizeStop = useCallback((newLayout) => {
+            persistGridLayout(newLayout);
+        }, [persistGridLayout]);
 
         const updateWidget = (id, patch) => {
             setLayout((prev) => {
@@ -1365,8 +1414,11 @@ if (is_file($timestate_widget_file)) {
                     cols={gridCols}
                     rowHeight={30}
                     width={gridWidth}
+                    compactType={null}
                     draggableHandle=".widget-header"
                     onLayoutChange={onLayoutChange}
+                    onDragStop={onDragStop}
+                    onResizeStop={onResizeStop}
                 >
                     {layout.map((w) => (
                         (() => {

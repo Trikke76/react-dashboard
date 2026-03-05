@@ -440,7 +440,7 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
         rows.push({
             id: `m${rows.length}`,
             type: 'value',
-            condition: '',
+            condition: '1',
             text: '',
             color: '#607D8B'
         });
