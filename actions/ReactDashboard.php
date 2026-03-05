@@ -22,7 +22,7 @@ class ReactDashboard extends CController {
     }
 
     protected function doAction(): void {
-        $action = (string) $this->getInput('action_type', '');
+        $action = (string) $this->req('action_type', '');
         if ($action !== '') {
             $this->handleApiAction($action);
             return;
@@ -84,7 +84,7 @@ class ReactDashboard extends CController {
         if ($action === 'get_hosts_by_group') {
             $hosts = API::Host()->get([
                 'output' => ['hostid', 'name', 'available'],
-                'groupids' => $this->getInput('groupid', null),
+                'groupids' => $this->req('groupid', null),
                 'monitored_hosts' => true,
                 'sortfield' => 'name'
             ]) ?: [];
@@ -93,17 +93,17 @@ class ReactDashboard extends CController {
         }
 
         if ($action === 'save') {
-            $hostid = $this->getInput('hostid', 0);
+            $hostid = $this->req('hostid', 0);
             CProfile::update('web.react_dashboard.hostid', $hostid, PROFILE_TYPE_ID);
             $this->respondJson(['status' => 'ok']);
         }
 
         if ($action === 'timestate_items') {
-            $hostids = $this->parseIds((string) $this->getInput('hostids_csv', ''));
-            $item_key_search = trim((string) $this->getInput('item_key_search', ''));
-            $item_name_search = trim((string) $this->getInput('item_name_search', ''));
-            $max_rows = $this->clampInt((int) $this->getInput('max_rows', 20), 1, 200);
-            $filter_exact = ((int) $this->getInput('filter_exact', 0)) === 1;
+            $hostids = $this->parseIds((string) $this->req('hostids_csv', ''));
+            $item_key_search = trim((string) $this->req('item_key_search', ''));
+            $item_name_search = trim((string) $this->req('item_name_search', ''));
+            $max_rows = $this->clampInt((int) $this->req('max_rows', 20), 1, 200);
+            $filter_exact = ((int) $this->req('filter_exact', 0)) === 1;
 
             if ($hostids === []) {
                 $this->respondJson(['items' => []]);
@@ -172,20 +172,20 @@ class ReactDashboard extends CController {
         }
 
         if ($action === 'timestate_data') {
-            $hostids = $this->parseIds((string) $this->getInput('hostids_csv', ''));
-            $itemids = $this->parseIds((string) $this->getInput('itemids_csv', ''));
+            $hostids = $this->parseIds((string) $this->req('hostids_csv', ''));
+            $itemids = $this->parseIds((string) $this->req('itemids_csv', ''));
             if ($hostids === [] && $itemids === []) {
                 $this->respondJson(['error' => 'Selecteer minstens een host of item.']);
             }
 
-            $item_key_search = trim((string) $this->getInput('item_key_search', ''));
-            $item_name_search = trim((string) $this->getInput('item_name_search', ''));
-            $lookback_hours = $this->clampInt((int) $this->getInput('lookback_hours', 24), 1, 24 * 31);
-            $max_rows = $this->clampInt((int) $this->getInput('max_rows', 20), 1, 200);
-            $history_points = $this->clampInt((int) $this->getInput('history_points', 500), 50, 5000);
-            $row_sort = $this->clampInt((int) $this->getInput('row_sort', 0), 0, 2);
-            $merge_equal_states = ((int) $this->getInput('merge_equal_states', 1)) === 1;
-            $state_map_raw = (string) $this->getInput('state_map', '');
+            $item_key_search = trim((string) $this->req('item_key_search', ''));
+            $item_name_search = trim((string) $this->req('item_name_search', ''));
+            $lookback_hours = $this->clampInt((int) $this->req('lookback_hours', 24), 1, 24 * 31);
+            $max_rows = $this->clampInt((int) $this->req('max_rows', 20), 1, 200);
+            $history_points = $this->clampInt((int) $this->req('history_points', 500), 50, 5000);
+            $row_sort = $this->clampInt((int) $this->req('row_sort', 0), 0, 2);
+            $merge_equal_states = ((int) $this->req('merge_equal_states', 1)) === 1;
+            $state_map_raw = (string) $this->req('state_map', '');
 
             $time_to = time();
             $time_from = $time_to - ($lookback_hours * 3600);
@@ -307,6 +307,10 @@ class ReactDashboard extends CController {
         }
 
         $this->respondJson(['error' => 'Onbekende action_type']);
+    }
+
+    private function req(string $name, $default = null) {
+        return $_REQUEST[$name] ?? $default;
     }
 
     private function respondJson($payload): void {
