@@ -328,6 +328,28 @@ $page->show();
         font-size: 11px;
     }
 
+    .editor-mapping-list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .editor-mapping-row {
+        display: grid;
+        grid-template-columns: 92px 1fr 1fr 48px 30px;
+        gap: 6px;
+        align-items: center;
+    }
+
+    .editor-mapping-row input[type="color"] {
+        width: 100%;
+        height: 30px;
+        border: 1px solid var(--border-color);
+        background: var(--input-bg);
+        padding: 2px;
+        border-radius: 2px;
+    }
+
     .editor-segment {
         display: inline-flex;
         border: 1px solid var(--border-color);
@@ -479,9 +501,11 @@ $page->show();
 </style>
 
 <script>
+    <?php $module_base = rtrim(dirname($_SERVER['SCRIPT_NAME']), '/'); ?>
     window.ZABBIX_CONFIG = {
-        api_url: 'modules/react-dashboard/modules/react-dashboard/api.php',
-        api_fallback_url: 'modules/react-dashboard/api.php'
+        module_base: '<?php echo $module_base; ?>',
+        api_url: '<?php echo $module_base; ?>/modules/react-dashboard/modules/react-dashboard/api.php',
+        api_fallback_url: '<?php echo $module_base; ?>/modules/react-dashboard/api.php'
     };
 </script>
 

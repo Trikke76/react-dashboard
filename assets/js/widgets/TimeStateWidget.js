@@ -29,22 +29,112 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId }) => {
     const [hosts, setHosts] = useState([]);
     const [itemSuggestions, setItemSuggestions] = useState([]);
     const [itemsLoading, setItemsLoading] = useState(false);
+    const [mappingRows, setMappingRows] = useState([]);
 
     const parseCsvIds = (raw) => String(raw || '')
         .split(/[\s,]+/)
         .map((v) => v.trim())
         .filter((v) => /^\d+$/.test(v));
 
+    const parseMappings = (raw) => {
+        const chunks = String(raw || '')
+            .split(',')
+            .map((c) => c.trim())
+            .filter(Boolean);
+
+        const rows = chunks.map((chunk, idx) => {
+            const equalIdx = chunk.indexOf('=');
+            const left = equalIdx >= 0 ? chunk.slice(0, equalIdx).trim() : chunk.trim();
+            const right = equalIdx >= 0 ? chunk.slice(equalIdx + 1).trim() : '';
+            const colonIdx = left.indexOf(':');
+            const type = colonIdx >= 0 ? left.slice(0, colonIdx).trim() : 'value';
+            const condition = colonIdx >= 0 ? left.slice(colonIdx + 1).trim() : left;
+            const [text, color] = right.split('|');
+
+            return {
+                id: `m${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 7)}`,
+                type: type || 'value',
+                condition: condition || '',
+                text: (text || '').trim(),
+                color: (color || '').trim()
+            };
+        });
+
+        if (rows.length === 0) {
+            return [{
+                id: `m${Date.now()}_0`,
+                type: 'value',
+                condition: '0',
+                text: 'OK',
+                color: '#2E7D32'
+            }, {
+                id: `m${Date.now()}_1`,
+                type: 'value',
+                condition: '1',
+                text: 'Problem',
+                color: '#C62828'
+            }];
+        }
+
+        return rows;
+    };
+
+    const serializeMappings = (rows) => rows
+        .map((row) => {
+            const type = String(row.type || 'value').trim();
+            const condition = String(row.condition || '').trim();
+            const text = String(row.text || '').trim();
+            const color = String(row.color || '').trim();
+            if (condition === '') {
+                return '';
+            }
+            const right = color ? `${text}|${color}` : text;
+            return `${type}:${condition}=${right}`;
+        })
+        .filter(Boolean)
+        .join(',');
+
+    const mappingConditionPlaceholder = (type) => {
+        if (type === 'range') {
+            return '80..100';
+        }
+        if (type === 'regex') {
+            return '/^ERR.*/';
+        }
+        if (type === 'special') {
+            return 'null';
+        }
+        return '1';
+    };
+
+    const mappingConditionHint = (type) => {
+        if (type === 'range') {
+            return 'Range: min..max (bv. 80..100)';
+        }
+        if (type === 'regex') {
+            return 'Regex: /pattern/ (bv. /^ERR.*/)';
+        }
+        if (type === 'special') {
+            return 'Special: null, empty, nan';
+        }
+        return 'Exacte waarde (bv. 0 of 1)';
+    };
+
     const selectedHostIds = useMemo(() => new Set(parseCsvIds(cfg.hostidsCsv)), [cfg.hostidsCsv]);
     const selectedItemIds = useMemo(() => new Set(parseCsvIds(cfg.itemidsCsv)), [cfg.itemidsCsv]);
 
     const apiCandidates = useMemo(() => {
         const zbxConfig = window.ZABBIX_CONFIG || {};
+        const moduleBase = String(zbxConfig.module_base || '').replace(/\/+$/, '');
         return Array.from(new Set([
             zbxConfig.api_url,
             zbxConfig.api_fallback_url,
+            `${moduleBase}/modules/react-dashboard/modules/react-dashboard/api.php`,
+            `${moduleBase}/modules/react-dashboard/api.php`,
             'modules/react-dashboard/modules/react-dashboard/api.php',
-            'modules/react-dashboard/api.php'
+            'modules/react-dashboard/api.php',
+            '/modules/react-dashboard/modules/react-dashboard/api.php',
+            '/modules/react-dashboard/api.php'
         ].filter(Boolean)));
     }, []);
 
@@ -230,6 +320,13 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId }) => {
         return () => clearTimeout(timer);
     }, [editMode, cfg.hostidsCsv, cfg.itemKeySearch, cfg.itemNameSearch, cfg.maxRows, fetchItemSuggestions]);
 
+    useEffect(() => {
+        if (!editMode) {
+            return;
+        }
+        setMappingRows(parseMappings(cfg.stateMap));
+    }, [editMode, cfg.stateMap]);
+
     const setIdsCsv = (key, idsSet) => {
         const sorted = Array.from(idsSet).sort((a, b) => Number(a) - Number(b));
         updateSettings({ [key]: sorted.join(',') });
@@ -265,6 +362,39 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId }) => {
         const next = new Set(selectedItemIds);
         itemSuggestions.forEach((item) => next.add(String(item.itemid)));
         setIdsCsv('itemidsCsv', next);
+    };
+
+    const updateMapping = (id, patch) => {
+        setMappingRows((prev) => {
+            const next = prev.map((row) => (row.id === id ? { ...row, ...patch } : row));
+            updateSettings({ stateMap: serializeMappings(next) });
+            return next;
+        });
+    };
+
+    const addMapping = () => {
+        setMappingRows((prev) => {
+            const next = [
+                ...prev,
+                {
+                    id: `m${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                    type: 'value',
+                    condition: '',
+                    text: '',
+                    color: '#607D8B'
+                }
+            ];
+            updateSettings({ stateMap: serializeMappings(next) });
+            return next;
+        });
+    };
+
+    const removeMapping = (id) => {
+        setMappingRows((prev) => {
+            const next = prev.filter((row) => row.id !== id);
+            updateSettings({ stateMap: serializeMappings(next) });
+            return next;
+        });
     };
 
     const timeFrom = Number(model.time_from || 0);
@@ -489,12 +619,46 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId }) => {
 
                             <div className="editor-label">Value mappings</div>
                             <div className="editor-control">
-                                <textarea
-                                    className="editor-textarea"
-                                    value={cfg.stateMap}
-                                    onChange={(e) => updateSettings({ stateMap: e.target.value })}
-                                    rows="3"
-                                />
+                                <div className="editor-mapping-list">
+                                    {mappingRows.map((row) => (
+                                        <div key={row.id}>
+                                            <div className="editor-mapping-row">
+                                                <select
+                                                    value={row.type}
+                                                    onChange={(e) => updateMapping(row.id, { type: e.target.value })}
+                                                >
+                                                    <option value="value">value</option>
+                                                    <option value="range">range</option>
+                                                    <option value="regex">regex</option>
+                                                    <option value="special">special</option>
+                                                </select>
+                                                <input
+                                                    type="text"
+                                                    value={row.condition}
+                                                    onChange={(e) => updateMapping(row.id, { condition: e.target.value })}
+                                                    placeholder={mappingConditionPlaceholder(row.type)}
+                                                />
+                                                <input
+                                                    type="text"
+                                                    value={row.text}
+                                                    onChange={(e) => updateMapping(row.id, { text: e.target.value })}
+                                                    placeholder="label"
+                                                />
+                                                <input
+                                                    type="color"
+                                                    value={row.color || '#607D8B'}
+                                                    onChange={(e) => updateMapping(row.id, { color: e.target.value })}
+                                                />
+                                                <button className="btn-zbx btn-danger" type="button" onClick={() => removeMapping(row.id)}>✕</button>
+                                            </div>
+                                            <div className="editor-subtle">{mappingConditionHint(row.type)}</div>
+                                        </div>
+                                    ))}
+                                    <div className="editor-inline-actions">
+                                        <button className="btn-zbx" type="button" onClick={addMapping}>Add mapping</button>
+                                        <span className="editor-subtle">{cfg.stateMap}</span>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
