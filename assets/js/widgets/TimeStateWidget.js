@@ -62,6 +62,8 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
 
     const [activeDatasetIdx, setActiveDatasetIdx] = useState(0);
     const [collapsedGroups, setCollapsedGroups] = useState({});
+    const [itemSuggestionsByDataset, setItemSuggestionsByDataset] = useState({});
+    const [itemSuggestionSignatures, setItemSuggestionSignatures] = useState({});
 
     const parseCsvIds = (raw) => String(raw || '')
         .split(/[\s,]+/)
@@ -388,6 +390,23 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
         updateDatasets(next);
     };
 
+    const clearDatasetSuggestions = useCallback((datasetIdx) => {
+        setItemSuggestionsByDataset((prev) => {
+            if (!Array.isArray(prev[datasetIdx])) {
+                return prev;
+            }
+            return { ...prev, [datasetIdx]: [] };
+        });
+        setItemSuggestionSignatures((prev) => {
+            if (!(datasetIdx in prev)) {
+                return prev;
+            }
+            const next = { ...prev };
+            delete next[datasetIdx];
+            return next;
+        });
+    }, []);
+
     const addDataset = () => {
         if (datasets.length >= MAX_DATASETS) {
             return;
@@ -458,6 +477,21 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
         setCollapsedGroups((prev) => ({ ...prev, [name]: !prev[name] }));
     };
 
+    const normalizeMappingCondition = (type, current) => {
+        const value = String(current || '').trim();
+        if (type === 'range') {
+            return value.includes('..') ? value : '0..100';
+        }
+        if (type === 'regex') {
+            return value !== '' ? value : '/.*/';
+        }
+        if (type === 'special') {
+            const normalized = value.toLowerCase();
+            return ['null', 'empty', 'nan'].includes(normalized) ? normalized : 'null';
+        }
+        return value !== '' ? value : '1';
+    };
+
     const mappingConditionPlaceholder = (type) => {
         if (type === 'range') {
             return '80..100';
@@ -483,6 +517,124 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
         }
         return 'Exacte waarde (bv. 0 of 1)';
     };
+
+    const handleMappingTypeChange = (datasetIdx, mappingIdx, nextTypeRaw) => {
+        const nextType = ['value', 'range', 'regex', 'special'].includes(nextTypeRaw) ? nextTypeRaw : 'value';
+        const rows = getDatasetMappingRows(datasets[datasetIdx] || DEFAULT_DATASET);
+        const row = rows[mappingIdx];
+        if (!row) {
+            return;
+        }
+
+        rows[mappingIdx] = {
+            ...row,
+            type: nextType,
+            condition: normalizeMappingCondition(nextType, row.condition)
+        };
+        updateDataset(datasetIdx, { state_map: serializeMappings(rows) });
+    };
+
+    const fetchItemSuggestions = useCallback(async (datasetIdx, dataset) => {
+        if (!editMode) {
+            return;
+        }
+
+        const hostidsCsv = String(cfg.hostidsCsv || '');
+        const filterMode = String(dataset && dataset.filter_type ? dataset.filter_type : 'key') === 'name' ? 'name' : 'key';
+        const filterValue = String(dataset && dataset.filter_value ? dataset.filter_value : '').trim();
+        const filterExact = String(dataset && dataset.filter_exact ? dataset.filter_exact : '0') === '1' ? '1' : '0';
+        const signature = [hostidsCsv, filterMode, filterValue, filterExact].join('|');
+
+        if (hostidsCsv === '' || filterValue === '') {
+            clearDatasetSuggestions(datasetIdx);
+            return;
+        }
+        if (itemSuggestionSignatures[datasetIdx] === signature) {
+            return;
+        }
+
+        try {
+            const payload = await cachedJson({
+                action_type: 'timestate_items',
+                hostids_csv: hostidsCsv,
+                filter_mode: filterMode,
+                item_filter: filterValue,
+                filter_exact: filterExact,
+                max_rows: '40'
+            }, 10000);
+            const items = Array.isArray(payload && payload.items) ? payload.items : [];
+            const options = items
+                .map((item) => filterMode === 'name' ? String(item.name || '') : String(item.key_ || ''))
+                .map((value) => value.trim())
+                .filter(Boolean);
+            const uniqueOptions = Array.from(new Set(options)).slice(0, 40);
+
+            setItemSuggestionsByDataset((prev) => ({ ...prev, [datasetIdx]: uniqueOptions }));
+            setItemSuggestionSignatures((prev) => ({ ...prev, [datasetIdx]: signature }));
+        }
+        catch (_err) {
+            setItemSuggestionsByDataset((prev) => ({ ...prev, [datasetIdx]: [] }));
+        }
+    }, [cachedJson, cfg.hostidsCsv, editMode, itemSuggestionSignatures, clearDatasetSuggestions]);
+
+    useEffect(() => {
+        if (!editMode) {
+            return;
+        }
+
+        const activeDataset = datasets[safeActiveDatasetIdx];
+        if (!activeDataset) {
+            return;
+        }
+
+        const timer = setTimeout(() => {
+            fetchItemSuggestions(safeActiveDatasetIdx, activeDataset);
+        }, 250);
+
+        return () => clearTimeout(timer);
+    }, [editMode, datasets, safeActiveDatasetIdx, fetchItemSuggestions]);
+
+    useEffect(() => {
+        setItemSuggestionsByDataset((prev) => {
+            const next = {};
+            datasets.forEach((_, idx) => {
+                if (Array.isArray(prev[idx])) {
+                    next[idx] = prev[idx];
+                }
+            });
+
+            const prevKeys = Object.keys(prev);
+            const nextKeys = Object.keys(next);
+            if (prevKeys.length === nextKeys.length && nextKeys.every((key) => prevKeys.includes(key))) {
+                return prev;
+            }
+            return next;
+        });
+
+        setItemSuggestionSignatures((prev) => {
+            const next = {};
+            datasets.forEach((_, idx) => {
+                if (idx in prev) {
+                    next[idx] = prev[idx];
+                }
+            });
+
+            const prevKeys = Object.keys(prev);
+            const nextKeys = Object.keys(next);
+            if (prevKeys.length === nextKeys.length && nextKeys.every((key) => prevKeys.includes(key))) {
+                return prev;
+            }
+            return next;
+        });
+    }, [datasets]);
+
+    useEffect(() => {
+        if (String(cfg.hostidsCsv || '').trim() !== '') {
+            return;
+        }
+        setItemSuggestionsByDataset({});
+        setItemSuggestionSignatures({});
+    }, [cfg.hostidsCsv]);
 
     const timeFrom = Number(model.time_from || 0);
     const timeTo = Number(model.time_to || 0);
@@ -698,7 +850,13 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
 
                                                     <label>
                                                         <span className="editor-subtle">Filter type</span>
-                                                        <select value={dataSet.filter_type} onChange={(e) => updateDataset(idx, { filter_type: e.target.value, filter_exact: '0' })}>
+                                                        <select
+                                                            value={dataSet.filter_type}
+                                                            onChange={(e) => {
+                                                                clearDatasetSuggestions(idx);
+                                                                updateDataset(idx, { filter_type: e.target.value, filter_exact: '0' });
+                                                            }}
+                                                        >
                                                             <option value="key">Item key</option>
                                                             <option value="name">Item name</option>
                                                         </select>
@@ -706,12 +864,40 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
 
                                                     <label className="is-full">
                                                         <span className="editor-subtle">Filter value</span>
-                                                        <input
-                                                            type="text"
-                                                            value={dataSet.filter_value}
-                                                            placeholder={dataSet.filter_type === 'key' ? 'bv. zabbix[*' : 'bv. CPU'}
-                                                            onChange={(e) => updateDataset(idx, { filter_value: e.target.value, filter_exact: '0' })}
-                                                        />
+                                                        {(() => {
+                                                            const datalistId = `timestate-filter-options-${widgetId || 'w'}-${idx}`;
+                                                            const suggestions = Array.isArray(itemSuggestionsByDataset[idx]) ? itemSuggestionsByDataset[idx] : [];
+
+                                                            return (
+                                                                <>
+                                                                    <input
+                                                                        type="text"
+                                                                        value={dataSet.filter_value}
+                                                                        list={datalistId}
+                                                                        placeholder={dataSet.filter_type === 'key' ? 'bv. zabbix[*' : 'bv. CPU'}
+                                                                        onChange={(e) => {
+                                                                            if (String(e.target.value || '').trim() === '') {
+                                                                                clearDatasetSuggestions(idx);
+                                                                            }
+                                                                            updateDataset(idx, { filter_value: e.target.value, filter_exact: '0' });
+                                                                            setItemSuggestionSignatures((prev) => {
+                                                                                if (!(idx in prev)) {
+                                                                                    return prev;
+                                                                                }
+                                                                                const next = { ...prev };
+                                                                                delete next[idx];
+                                                                                return next;
+                                                                            });
+                                                                        }}
+                                                                    />
+                                                                    <datalist id={datalistId}>
+                                                                        {suggestions.map((value, optionIdx) => (
+                                                                            <option key={`${datalistId}-${optionIdx}`} value={value} />
+                                                                        ))}
+                                                                    </datalist>
+                                                                </>
+                                                            );
+                                                        })()}
                                                     </label>
 
                                                     <label>
@@ -767,18 +953,29 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                                                         {dataSetMappings.map((row, mappingIdx) => (
                                                             <div key={`${idx}-${row.id}-${mappingIdx}`}>
                                                                 <div className="editor-mapping-row">
-                                                                    <select value={row.type} onChange={(e) => updateDatasetMapping(idx, mappingIdx, { type: e.target.value })}>
+                                                                    <select value={row.type} onChange={(e) => handleMappingTypeChange(idx, mappingIdx, e.target.value)}>
                                                                         <option value="value">value</option>
                                                                         <option value="range">range</option>
                                                                         <option value="regex">regex</option>
                                                                         <option value="special">special</option>
                                                                     </select>
-                                                                    <input
-                                                                        type="text"
-                                                                        value={row.condition}
-                                                                        onChange={(e) => updateDatasetMapping(idx, mappingIdx, { condition: e.target.value })}
-                                                                        placeholder={mappingConditionPlaceholder(row.type)}
-                                                                    />
+                                                                    {row.type === 'special' ? (
+                                                                        <select
+                                                                            value={normalizeMappingCondition('special', row.condition)}
+                                                                            onChange={(e) => updateDatasetMapping(idx, mappingIdx, { condition: e.target.value })}
+                                                                        >
+                                                                            <option value="null">null</option>
+                                                                            <option value="empty">empty</option>
+                                                                            <option value="nan">nan</option>
+                                                                        </select>
+                                                                    ) : (
+                                                                        <input
+                                                                            type="text"
+                                                                            value={row.condition}
+                                                                            onChange={(e) => updateDatasetMapping(idx, mappingIdx, { condition: e.target.value })}
+                                                                            placeholder={mappingConditionPlaceholder(row.type)}
+                                                                        />
+                                                                    )}
                                                                     <input
                                                                         type="text"
                                                                         value={row.text}
