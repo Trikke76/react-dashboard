@@ -53,9 +53,8 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
 
     const [groups, setGroups] = useState([]);
     const [hosts, setHosts] = useState([]);
-    const [itemSuggestions, setItemSuggestions] = useState([]);
-    const [itemsLoading, setItemsLoading] = useState(false);
-    const [mappingRows, setMappingRows] = useState([]);
+    const [itemSuggestionsByDataset, setItemSuggestionsByDataset] = useState({});
+    const [itemsLoadingByDataset, setItemsLoadingByDataset] = useState({});
 
     const [hostPickerOpen, setHostPickerOpen] = useState(false);
     const [hostSearchTerm, setHostSearchTerm] = useState('');
@@ -86,7 +85,7 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
             const [text, color] = right.split('|');
 
             return {
-                id: `m${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 7)}`,
+                id: `m${idx}`,
                 type: type || 'value',
                 condition: condition || '',
                 text: (text || '').trim(),
@@ -96,13 +95,13 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
 
         if (rows.length === 0) {
             return [{
-                id: `m${Date.now()}_0`,
+                id: 'm0',
                 type: 'value',
                 condition: '1',
                 text: 'OK',
                 color: '#2E7D32'
             }, {
-                id: `m${Date.now()}_1`,
+                id: 'm1',
                 type: 'value',
                 condition: '0',
                 text: 'Problem',
@@ -212,7 +211,6 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
 
     const datasets = useMemo(() => parseDataSets(), [parseDataSets]);
     const safeActiveDatasetIdx = Math.max(0, Math.min(activeDatasetIdx, datasets.length - 1));
-    const activeDataset = datasets[safeActiveDatasetIdx] || DEFAULT_DATASET;
 
     const selectedHostIds = useMemo(() => new Set(parseCsvIds(cfg.hostidsCsv)), [cfg.hostidsCsv]);
     const selectedItemIds = useMemo(() => new Set(parseCsvIds(cfg.itemidsCsv)), [cfg.itemidsCsv]);
@@ -242,19 +240,16 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
         return `${selectedHosts.slice(0, 3).join(', ')} +${selectedHosts.length - 3}`;
     }, [hosts, selectedHostIds]);
 
-    const filterSuggestionListId = useMemo(() => {
-        const raw = String(widgetId || 'default');
-        return `timestate-filter-${raw.replace(/[^a-zA-Z0-9_-]/g, '_')}-${safeActiveDatasetIdx}`;
-    }, [widgetId, safeActiveDatasetIdx]);
-
-    const filterTypeaheadValues = useMemo(() => {
-        const values = itemSuggestions
-            .map((item) => activeDataset.filter_type === 'name' ? String(item.name || '') : String(item.key_ || ''))
-            .map((value) => value.trim())
-            .filter(Boolean);
-
-        return Array.from(new Set(values)).slice(0, 200);
-    }, [itemSuggestions, activeDataset.filter_type]);
+    const datasetFilterSignature = useMemo(() => (
+        datasets
+            .map((dataSet) => [
+                String(dataSet.filter_type || ''),
+                String(dataSet.filter_value || ''),
+                String(dataSet.filter_exact || ''),
+                String(dataSet.max_rows || '')
+            ].join('|'))
+            .join('||')
+    ), [datasets]);
 
     useEffect(() => {
         if (safeActiveDatasetIdx !== activeDatasetIdx) {
@@ -318,32 +313,41 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
         }
     }, [cachedJson]);
 
-    const fetchItemSuggestions = useCallback(async () => {
+    const fetchItemSuggestions = useCallback(async (datasetIdx, dataSet) => {
         if (!cfg.hostidsCsv) {
-            setItemSuggestions([]);
+            setItemSuggestionsByDataset((prev) => ({ ...prev, [datasetIdx]: [] }));
             return;
         }
 
-        setItemsLoading(true);
+        const filterValue = String(dataSet && dataSet.filter_value || '').trim();
+        if (filterValue === '') {
+            setItemSuggestionsByDataset((prev) => ({ ...prev, [datasetIdx]: [] }));
+            return;
+        }
+
+        setItemsLoadingByDataset((prev) => ({ ...prev, [datasetIdx]: true }));
         try {
             const payload = await cachedJson({
                 action_type: 'timestate_items',
                 hostids_csv: String(cfg.hostidsCsv || ''),
-                filter_mode: String(activeDataset.filter_type || 'key'),
-                item_filter: String(activeDataset.filter_value || ''),
-                filter_exact: String(activeDataset.filter_exact || '0'),
-                max_rows: String(Math.max(1, Number(activeDataset.max_rows || 20)))
+                filter_mode: String(dataSet && dataSet.filter_type || 'key'),
+                item_filter: filterValue,
+                filter_exact: String(dataSet && dataSet.filter_exact || '0'),
+                max_rows: String(Math.max(1, Number(dataSet && dataSet.max_rows || 20)))
             }, 6000);
 
-            setItemSuggestions(Array.isArray(payload.items) ? payload.items : []);
+            setItemSuggestionsByDataset((prev) => ({
+                ...prev,
+                [datasetIdx]: Array.isArray(payload.items) ? payload.items : []
+            }));
         }
         catch (_err) {
-            setItemSuggestions([]);
+            setItemSuggestionsByDataset((prev) => ({ ...prev, [datasetIdx]: [] }));
         }
         finally {
-            setItemsLoading(false);
+            setItemsLoadingByDataset((prev) => ({ ...prev, [datasetIdx]: false }));
         }
-    }, [cachedJson, cfg.hostidsCsv, activeDataset]);
+    }, [cachedJson, cfg.hostidsCsv]);
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -406,23 +410,26 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
             return;
         }
         if (!cfg.hostidsCsv) {
-            setItemSuggestions([]);
+            setItemSuggestionsByDataset({});
+            setItemsLoadingByDataset({});
             return;
         }
 
-        const timer = setTimeout(() => {
-            fetchItemSuggestions();
-        }, 350);
+        const timers = datasets.map((dataSet, idx) => setTimeout(() => {
+            fetchItemSuggestions(idx, dataSet);
+        }, 350));
 
-        return () => clearTimeout(timer);
-    }, [editMode, cfg.hostidsCsv, activeDataset.filter_type, activeDataset.filter_value, activeDataset.filter_exact, activeDataset.max_rows, fetchItemSuggestions]);
+        return () => timers.forEach((timer) => clearTimeout(timer));
+    }, [editMode, cfg.hostidsCsv, datasets, datasetFilterSignature, fetchItemSuggestions]);
 
     useEffect(() => {
-        if (!editMode) {
-            return;
-        }
-        setMappingRows(parseMappings(activeDataset.state_map || DEFAULT_STATE_MAP));
-    }, [editMode, safeActiveDatasetIdx]);
+        setItemSuggestionsByDataset((prev) => Object.fromEntries(
+            Object.entries(prev).filter(([key]) => Number(key) < datasets.length)
+        ));
+        setItemsLoadingByDataset((prev) => Object.fromEntries(
+            Object.entries(prev).filter(([key]) => Number(key) < datasets.length)
+        ));
+    }, [datasets.length]);
 
     useEffect(() => {
         if ((Number(cfg.rowGroupMode) || 0) === 0) {
@@ -465,42 +472,33 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
         setActiveDatasetIdx((prev) => Math.max(0, Math.min(prev, Math.max(0, next.length - 1))));
     };
 
-    const updateActiveDatasetMappings = (nextMappings) => {
-        const state_map = serializeMappings(nextMappings);
-        updateDataset(safeActiveDatasetIdx, { state_map });
+    const getDatasetMappingRows = (dataset) => parseMappings(dataset && dataset.state_map ? dataset.state_map : DEFAULT_STATE_MAP);
+
+    const updateDatasetMapping = (datasetIdx, mappingIdx, patch) => {
+        const rows = getDatasetMappingRows(datasets[datasetIdx] || DEFAULT_DATASET);
+        if (!rows[mappingIdx]) {
+            return;
+        }
+        rows[mappingIdx] = { ...rows[mappingIdx], ...patch };
+        updateDataset(datasetIdx, { state_map: serializeMappings(rows) });
     };
 
-    const updateMapping = (id, patch) => {
-        setMappingRows((prev) => {
-            const next = prev.map((row) => (row.id === id ? { ...row, ...patch } : row));
-            updateActiveDatasetMappings(next);
-            return next;
+    const addDatasetMapping = (datasetIdx) => {
+        const rows = getDatasetMappingRows(datasets[datasetIdx] || DEFAULT_DATASET);
+        rows.push({
+            id: `m${rows.length}`,
+            type: 'value',
+            condition: '',
+            text: '',
+            color: '#607D8B'
         });
+        updateDataset(datasetIdx, { state_map: serializeMappings(rows) });
     };
 
-    const addMapping = () => {
-        setMappingRows((prev) => {
-            const next = [
-                ...prev,
-                {
-                    id: `m${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-                    type: 'value',
-                    condition: '',
-                    text: '',
-                    color: '#607D8B'
-                }
-            ];
-            updateActiveDatasetMappings(next);
-            return next;
-        });
-    };
-
-    const removeMapping = (id) => {
-        setMappingRows((prev) => {
-            const next = prev.filter((row) => row.id !== id);
-            updateActiveDatasetMappings(next);
-            return next;
-        });
+    const removeDatasetMapping = (datasetIdx, mappingIdx) => {
+        const rows = getDatasetMappingRows(datasets[datasetIdx] || DEFAULT_DATASET);
+        const next = rows.filter((_, idx) => idx !== mappingIdx);
+        updateDataset(datasetIdx, { state_map: serializeMappings(next) });
     };
 
     const setIdsCsv = (key, idsSet) => {
@@ -543,9 +541,10 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
 
     const clearItemSelection = () => updateSettings({ itemidsCsv: '' });
 
-    const selectAllFoundItems = () => {
+    const selectAllFoundItems = (datasetIdx) => {
+        const suggestions = itemSuggestionsByDataset[datasetIdx] || [];
         const next = new Set(selectedItemIds);
-        itemSuggestions.forEach((item) => next.add(String(item.itemid)));
+        suggestions.forEach((item) => next.add(String(item.itemid)));
         setIdsCsv('itemidsCsv', next);
     };
 
@@ -711,7 +710,7 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                 )}
 
                 {editMode ? (
-                    <div className="clock-editor">
+                    <div className="clock-editor clock-editor--timestate">
                         <div className="editor-title">Time State</div>
                         <div className="editor-grid">
                             <div className="editor-label">Name</div>
@@ -774,161 +773,179 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                             <div className="editor-label">Data sources</div>
                             <div className="editor-control">
                                 <div className="editor-datasets">
-                                    {datasets.map((dataSet, idx) => (
-                                        <div key={`dataset-${idx}`} className={`editor-dataset ${idx === safeActiveDatasetIdx ? 'is-active' : ''}`}>
-                                            <div className="editor-inline-actions">
-                                                <strong>Data source #{idx + 1}</strong>
-                                                <button className="btn-zbx" type="button" onClick={() => setActiveDatasetIdx(idx)}>Use</button>
-                                                <button className="btn-zbx btn-danger" type="button" onClick={() => removeDataset(idx)} disabled={datasets.length <= 1}>✕</button>
+                                    {datasets.map((dataSet, idx) => {
+                                        const dataSetSuggestions = itemSuggestionsByDataset[idx] || [];
+                                        const dataSetLoading = !!itemsLoadingByDataset[idx];
+                                        const dataSetMappings = getDatasetMappingRows(dataSet);
+                                        const suggestionListId = `timestate-filter-${String(widgetId || 'widget').replace(/[^a-zA-Z0-9_-]/g, '_')}-${idx}`;
+                                        const filterTypeaheadValues = Array.from(new Set(
+                                            dataSetSuggestions
+                                                .map((item) => {
+                                                    if (String(dataSet.filter_type || 'key') === 'name') {
+                                                        return String(item.name || item.label || '');
+                                                    }
+                                                    return String(item.key_ || item.label || '');
+                                                })
+                                                .filter((value) => value !== '')
+                                        )).slice(0, 80);
+
+                                        return (
+                                            <div key={`dataset-${idx}`} className={`editor-dataset ${idx === safeActiveDatasetIdx ? 'is-active' : ''}`}>
+                                                <div className="editor-inline-actions">
+                                                    <strong>Data source #{idx + 1}</strong>
+                                                    <button className="btn-zbx" type="button" onClick={() => setActiveDatasetIdx(idx)}>Use</button>
+                                                    <button className="btn-zbx btn-danger" type="button" onClick={() => removeDataset(idx)} disabled={datasets.length <= 1}>✕</button>
+                                                </div>
+
+                                                <div className="editor-dataset-grid">
+                                                    <label>
+                                                        <span className="editor-subtle">Name</span>
+                                                        <input type="text" value={dataSet.name} onChange={(e) => updateDataset(idx, { name: e.target.value })} />
+                                                    </label>
+
+                                                    <label>
+                                                        <span className="editor-subtle">Filter type</span>
+                                                        <select value={dataSet.filter_type} onChange={(e) => updateDataset(idx, { filter_type: e.target.value, filter_exact: '0' })}>
+                                                            <option value="key">Item key</option>
+                                                            <option value="name">Item name</option>
+                                                        </select>
+                                                    </label>
+
+                                                    <label className="is-full">
+                                                        <span className="editor-subtle">Filter value</span>
+                                                        <input
+                                                            type="text"
+                                                            value={dataSet.filter_value}
+                                                            list={suggestionListId}
+                                                            placeholder={dataSet.filter_type === 'key' ? 'bv. zabbix[*' : 'bv. CPU'}
+                                                            onChange={(e) => updateDataset(idx, { filter_value: e.target.value, filter_exact: '0' })}
+                                                        />
+                                                    </label>
+
+                                                    <label>
+                                                        <span className="editor-subtle">Max rows</span>
+                                                        <input type="number" min="1" max="200" value={dataSet.max_rows} onChange={(e) => updateDataset(idx, { max_rows: String(clampInt(Number(e.target.value) || 20, 1, 200)) })} />
+                                                    </label>
+
+                                                    <label>
+                                                        <span className="editor-subtle">Lookback (hours)</span>
+                                                        <input type="number" min="1" max="744" value={dataSet.lookback_hours} onChange={(e) => updateDataset(idx, { lookback_hours: String(clampInt(Number(e.target.value) || 24, 1, 744)) })} />
+                                                    </label>
+
+                                                    <label>
+                                                        <span className="editor-subtle">History points / item</span>
+                                                        <input type="number" min="10" max="5000" value={dataSet.history_points} onChange={(e) => updateDataset(idx, { history_points: String(clampInt(Number(e.target.value) || 500, 10, 5000)) })} />
+                                                    </label>
+
+                                                    <label>
+                                                        <span className="editor-subtle">Merge equal states</span>
+                                                        <select value={dataSet.merge_equal_states} onChange={(e) => updateDataset(idx, { merge_equal_states: e.target.value })}>
+                                                            <option value="1">Yes</option>
+                                                            <option value="0">No</option>
+                                                        </select>
+                                                    </label>
+
+                                                    <label>
+                                                        <span className="editor-subtle">Merge short (&lt; sec)</span>
+                                                        <input type="number" min="0" max="3600" value={dataSet.merge_shorter_than} onChange={(e) => updateDataset(idx, { merge_shorter_than: String(clampInt(Number(e.target.value) || 0, 0, 3600)) })} />
+                                                    </label>
+
+                                                    <label>
+                                                        <span className="editor-subtle">Null-gap mode</span>
+                                                        <select value={dataSet.null_gap_mode} onChange={(e) => updateDataset(idx, { null_gap_mode: e.target.value })}>
+                                                            <option value="0">Disconnected</option>
+                                                            <option value="1">Connected</option>
+                                                        </select>
+                                                    </label>
+
+                                                    <label>
+                                                        <span className="editor-subtle">Backfill from first</span>
+                                                        <select value={dataSet.null_gap_backfill_first} onChange={(e) => updateDataset(idx, { null_gap_backfill_first: e.target.value })}>
+                                                            <option value="0">No</option>
+                                                            <option value="1">Yes</option>
+                                                        </select>
+                                                    </label>
+                                                </div>
+
+                                                <datalist id={suggestionListId}>
+                                                    {filterTypeaheadValues.map((value) => (
+                                                        <option key={value} value={value} />
+                                                    ))}
+                                                </datalist>
+                                                <div className="editor-subtle">Wildcards ondersteund: `*` en `?`.</div>
+
+                                                <div className="editor-picker-panel">
+                                                    <div className="editor-subtle"><strong>Find items</strong></div>
+                                                    <div className="editor-inline-actions">
+                                                        <button className="btn-zbx" type="button" onClick={() => fetchItemSuggestions(idx, dataSet)}>
+                                                            {dataSetLoading ? 'Searching...' : 'Search'}
+                                                        </button>
+                                                        <button className="btn-zbx" type="button" onClick={() => selectAllFoundItems(idx)} disabled={dataSetSuggestions.length === 0}>
+                                                            Select all found
+                                                        </button>
+                                                        <button className="btn-zbx" type="button" onClick={clearItemSelection}>Clear selected</button>
+                                                        <span className="editor-subtle">Selected: {selectedItemIds.size}</span>
+                                                    </div>
+
+                                                    <div className="editor-subtle"><strong>Item matches</strong></div>
+                                                    <div className="editor-item-list">
+                                                        {dataSetSuggestions.length === 0 && <div className="editor-subtle">Type filter and wait, or click Search.</div>}
+                                                        {dataSetSuggestions.map((item) => (
+                                                            <label key={item.itemid} className="editor-item-entry">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={selectedItemIds.has(String(item.itemid))}
+                                                                    onChange={() => toggleItem(String(item.itemid))}
+                                                                />
+                                                                <span title={item.label}>{item.label}</span>
+                                                            </label>
+                                                        ))}
+                                                    </div>
+
+                                                    <div className="editor-subtle"><strong>Value mappings</strong></div>
+                                                    <div className="editor-mapping-list">
+                                                        {dataSetMappings.map((row, mappingIdx) => (
+                                                            <div key={`${idx}-${row.id}-${mappingIdx}`}>
+                                                                <div className="editor-mapping-row">
+                                                                    <select value={row.type} onChange={(e) => updateDatasetMapping(idx, mappingIdx, { type: e.target.value })}>
+                                                                        <option value="value">value</option>
+                                                                        <option value="range">range</option>
+                                                                        <option value="regex">regex</option>
+                                                                        <option value="special">special</option>
+                                                                    </select>
+                                                                    <input
+                                                                        type="text"
+                                                                        value={row.condition}
+                                                                        onChange={(e) => updateDatasetMapping(idx, mappingIdx, { condition: e.target.value })}
+                                                                        placeholder={mappingConditionPlaceholder(row.type)}
+                                                                    />
+                                                                    <input
+                                                                        type="text"
+                                                                        value={row.text}
+                                                                        onChange={(e) => updateDatasetMapping(idx, mappingIdx, { text: e.target.value })}
+                                                                        placeholder="label"
+                                                                    />
+                                                                    <input
+                                                                        type="color"
+                                                                        value={row.color || '#607D8B'}
+                                                                        onChange={(e) => updateDatasetMapping(idx, mappingIdx, { color: e.target.value })}
+                                                                    />
+                                                                    <button className="btn-zbx btn-danger" type="button" onClick={() => removeDatasetMapping(idx, mappingIdx)}>✕</button>
+                                                                </div>
+                                                                <div className="editor-subtle">{mappingConditionHint(row.type)}</div>
+                                                            </div>
+                                                        ))}
+
+                                                        <div className="editor-inline-actions">
+                                                            <button className="btn-zbx" type="button" onClick={() => addDatasetMapping(idx)}>Add mapping</button>
+                                                        </div>
+                                                    </div>
+                                                </div>
                                             </div>
-
-                                            <div className="editor-dataset-grid">
-                                                <label>
-                                                    <span className="editor-subtle">Name</span>
-                                                    <input type="text" value={dataSet.name} onChange={(e) => updateDataset(idx, { name: e.target.value })} />
-                                                </label>
-
-                                                <label>
-                                                    <span className="editor-subtle">Filter type</span>
-                                                    <select value={dataSet.filter_type} onChange={(e) => updateDataset(idx, { filter_type: e.target.value, filter_exact: '0' })}>
-                                                        <option value="key">Item key</option>
-                                                        <option value="name">Item name</option>
-                                                    </select>
-                                                </label>
-
-                                                <label className="is-full">
-                                                    <span className="editor-subtle">Filter value</span>
-                                                    <input
-                                                        type="text"
-                                                        value={dataSet.filter_value}
-                                                        list={idx === safeActiveDatasetIdx ? filterSuggestionListId : undefined}
-                                                        placeholder={dataSet.filter_type === 'key' ? 'bv. zabbix[*' : 'bv. CPU'}
-                                                        onChange={(e) => updateDataset(idx, { filter_value: e.target.value, filter_exact: '0' })}
-                                                    />
-                                                </label>
-
-                                                <label>
-                                                    <span className="editor-subtle">Max rows</span>
-                                                    <input type="number" min="1" max="200" value={dataSet.max_rows} onChange={(e) => updateDataset(idx, { max_rows: String(clampInt(Number(e.target.value) || 20, 1, 200)) })} />
-                                                </label>
-
-                                                <label>
-                                                    <span className="editor-subtle">Lookback (hours)</span>
-                                                    <input type="number" min="1" max="744" value={dataSet.lookback_hours} onChange={(e) => updateDataset(idx, { lookback_hours: String(clampInt(Number(e.target.value) || 24, 1, 744)) })} />
-                                                </label>
-
-                                                <label>
-                                                    <span className="editor-subtle">History points / item</span>
-                                                    <input type="number" min="10" max="5000" value={dataSet.history_points} onChange={(e) => updateDataset(idx, { history_points: String(clampInt(Number(e.target.value) || 500, 10, 5000)) })} />
-                                                </label>
-
-                                                <label>
-                                                    <span className="editor-subtle">Merge equal states</span>
-                                                    <select value={dataSet.merge_equal_states} onChange={(e) => updateDataset(idx, { merge_equal_states: e.target.value })}>
-                                                        <option value="1">Yes</option>
-                                                        <option value="0">No</option>
-                                                    </select>
-                                                </label>
-
-                                                <label>
-                                                    <span className="editor-subtle">Merge short (&lt; sec)</span>
-                                                    <input type="number" min="0" max="3600" value={dataSet.merge_shorter_than} onChange={(e) => updateDataset(idx, { merge_shorter_than: String(clampInt(Number(e.target.value) || 0, 0, 3600)) })} />
-                                                </label>
-
-                                                <label>
-                                                    <span className="editor-subtle">Null-gap mode</span>
-                                                    <select value={dataSet.null_gap_mode} onChange={(e) => updateDataset(idx, { null_gap_mode: e.target.value })}>
-                                                        <option value="0">Disconnected</option>
-                                                        <option value="1">Connected</option>
-                                                    </select>
-                                                </label>
-
-                                                <label>
-                                                    <span className="editor-subtle">Backfill from first</span>
-                                                    <select value={dataSet.null_gap_backfill_first} onChange={(e) => updateDataset(idx, { null_gap_backfill_first: e.target.value })}>
-                                                        <option value="0">No</option>
-                                                        <option value="1">Yes</option>
-                                                    </select>
-                                                </label>
-                                            </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
 
                                     <button className="btn-zbx" type="button" onClick={addDataset}>+ Add data source</button>
-                                </div>
-                                <datalist id={filterSuggestionListId}>
-                                    {filterTypeaheadValues.map((value) => (
-                                        <option key={value} value={value} />
-                                    ))}
-                                </datalist>
-                                <div className="editor-subtle">Wildcards ondersteund: `*` en `?`.</div>
-                            </div>
-
-                            <div className="editor-label">Find items</div>
-                            <div className="editor-control editor-inline-actions">
-                                <button className="btn-zbx" type="button" onClick={fetchItemSuggestions}>
-                                    {itemsLoading ? 'Searching...' : 'Search'}
-                                </button>
-                                <button className="btn-zbx" type="button" onClick={selectAllFoundItems} disabled={itemSuggestions.length === 0}>Select all found</button>
-                                <button className="btn-zbx" type="button" onClick={clearItemSelection}>Clear selected</button>
-                                <span className="editor-subtle">Selected: {selectedItemIds.size}</span>
-                            </div>
-
-                            <div className="editor-label">Item matches</div>
-                            <div className="editor-control">
-                                <div className="editor-item-list">
-                                    {itemSuggestions.length === 0 && <div className="editor-subtle">Type filter and wait, or click Search.</div>}
-                                    {itemSuggestions.map((item) => (
-                                        <label key={item.itemid} className="editor-item-entry">
-                                            <input
-                                                type="checkbox"
-                                                checked={selectedItemIds.has(String(item.itemid))}
-                                                onChange={() => toggleItem(String(item.itemid))}
-                                            />
-                                            <span title={item.label}>{item.label}</span>
-                                        </label>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <div className="editor-label">Value mappings</div>
-                            <div className="editor-control">
-                                <div className="editor-subtle">Editing mappings for data source #{safeActiveDatasetIdx + 1}</div>
-                                <div className="editor-mapping-list">
-                                    {mappingRows.map((row) => (
-                                        <div key={row.id}>
-                                            <div className="editor-mapping-row">
-                                                <select value={row.type} onChange={(e) => updateMapping(row.id, { type: e.target.value })}>
-                                                    <option value="value">value</option>
-                                                    <option value="range">range</option>
-                                                    <option value="regex">regex</option>
-                                                    <option value="special">special</option>
-                                                </select>
-                                                <input
-                                                    type="text"
-                                                    value={row.condition}
-                                                    onChange={(e) => updateMapping(row.id, { condition: e.target.value })}
-                                                    placeholder={mappingConditionPlaceholder(row.type)}
-                                                />
-                                                <input
-                                                    type="text"
-                                                    value={row.text}
-                                                    onChange={(e) => updateMapping(row.id, { text: e.target.value })}
-                                                    placeholder="label"
-                                                />
-                                                <input
-                                                    type="color"
-                                                    value={row.color || '#607D8B'}
-                                                    onChange={(e) => updateMapping(row.id, { color: e.target.value })}
-                                                />
-                                                <button className="btn-zbx btn-danger" type="button" onClick={() => removeMapping(row.id)}>✕</button>
-                                            </div>
-                                            <div className="editor-subtle">{mappingConditionHint(row.type)}</div>
-                                        </div>
-                                    ))}
-                                    <div className="editor-inline-actions">
-                                        <button className="btn-zbx" type="button" onClick={addMapping}>Add mapping</button>
-                                    </div>
                                 </div>
                             </div>
                         </div>

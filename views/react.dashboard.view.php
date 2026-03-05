@@ -241,6 +241,18 @@ $page->show();
         max-height: 100%;
     }
 
+    .clock-editor--timestate {
+        max-width: none;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .clock-editor--timestate > .editor-grid,
+    .clock-editor--timestate > .editor-advanced {
+        width: 100%;
+    }
+
     .editor-title {
         font-size: 15px;
         font-weight: 700;
