@@ -301,6 +301,21 @@ $page->show();
         gap: 4px;
     }
 
+    .editor-host-list--picker {
+        max-height: 220px;
+    }
+
+    .editor-picker-panel {
+        margin-top: 8px;
+        border: 1px solid var(--border-color);
+        border-radius: 2px;
+        background: var(--segment-bg);
+        padding: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
     .editor-host-item,
     .editor-item-entry {
         display: flex;

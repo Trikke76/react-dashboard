@@ -32,6 +32,8 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
     const [itemSuggestions, setItemSuggestions] = useState([]);
     const [itemsLoading, setItemsLoading] = useState(false);
     const [mappingRows, setMappingRows] = useState([]);
+    const [hostPickerOpen, setHostPickerOpen] = useState(false);
+    const [hostSearchTerm, setHostSearchTerm] = useState('');
 
     const parseCsvIds = (raw) => String(raw || '')
         .split(/[\s,]+/)
@@ -124,6 +126,32 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
 
     const selectedHostIds = useMemo(() => new Set(parseCsvIds(cfg.hostidsCsv)), [cfg.hostidsCsv]);
     const selectedItemIds = useMemo(() => new Set(parseCsvIds(cfg.itemidsCsv)), [cfg.itemidsCsv]);
+    const filteredHosts = useMemo(() => {
+        const query = String(hostSearchTerm || '').trim().toLowerCase();
+        if (query === '') {
+            return hosts;
+        }
+
+        return hosts.filter((host) => String(host.name || '').toLowerCase().includes(query));
+    }, [hosts, hostSearchTerm]);
+    const selectedHostSummary = useMemo(() => {
+        const selectedHosts = hosts
+            .filter((host) => selectedHostIds.has(String(host.hostid)))
+            .map((host) => String(host.name || ''))
+            .filter(Boolean);
+
+        if (selectedHosts.length === 0) {
+            if (selectedHostIds.size > 0) {
+                return `${selectedHostIds.size} host(s) selected`;
+            }
+            return 'No hosts selected';
+        }
+        if (selectedHosts.length <= 3) {
+            return selectedHosts.join(', ');
+        }
+
+        return `${selectedHosts.slice(0, 3).join(', ')} +${selectedHosts.length - 3}`;
+    }, [hosts, selectedHostIds]);
     const filterSuggestionListId = useMemo(() => {
         const raw = String(widgetId || 'default');
         return `timestate-filter-${raw.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
@@ -370,6 +398,15 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
         updateSettings({ hostidsCsv, itemidsCsv: '' });
     };
 
+    const selectAllVisibleHosts = () => {
+        const next = new Set(selectedHostIds);
+        filteredHosts.forEach((host) => next.add(String(host.hostid)));
+        const hostidsCsv = Array.from(next).sort((a, b) => Number(a) - Number(b)).join(',');
+        updateSettings({ hostidsCsv, itemidsCsv: '' });
+    };
+
+    const clearHostSelection = () => updateSettings({ hostidsCsv: '', itemidsCsv: '' });
+
     const toggleItem = (itemid) => {
         const next = new Set(selectedItemIds);
         if (next.has(itemid)) {
@@ -541,6 +578,8 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                                     value={cfg.groupid || ''}
                                     onChange={(e) => {
                                         const groupid = e.target.value;
+                                        setHostPickerOpen(false);
+                                        setHostSearchTerm('');
                                         updateSettings({ groupid, hostidsCsv: '', itemidsCsv: '' });
                                         fetchHosts(groupid);
                                     }}
@@ -554,19 +593,66 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
 
                             <div className="editor-label">Hosts</div>
                             <div className="editor-control">
-                                <div className="editor-host-list">
-                                    {hosts.length === 0 && <div className="editor-subtle">No hosts loaded for this group.</div>}
-                                    {hosts.map((host) => (
-                                        <label key={host.hostid} className="editor-host-item">
-                                            <input
-                                                type="checkbox"
-                                                checked={selectedHostIds.has(String(host.hostid))}
-                                                onChange={() => toggleHost(String(host.hostid))}
-                                            />
-                                            <span>{host.name}</span>
-                                        </label>
-                                    ))}
+                                <div className="editor-inline-actions">
+                                    <button
+                                        className="btn-zbx"
+                                        type="button"
+                                        disabled={!cfg.groupid || hosts.length === 0}
+                                        onClick={() => setHostPickerOpen((v) => !v)}
+                                    >
+                                        {hostPickerOpen ? 'Close host picker' : 'Select hosts'}
+                                    </button>
+                                    <button
+                                        className="btn-zbx"
+                                        type="button"
+                                        disabled={!hostPickerOpen || filteredHosts.length === 0}
+                                        onClick={selectAllVisibleHosts}
+                                    >
+                                        Select visible
+                                    </button>
+                                    <button
+                                        className="btn-zbx"
+                                        type="button"
+                                        disabled={selectedHostIds.size === 0}
+                                        onClick={clearHostSelection}
+                                    >
+                                        Clear
+                                    </button>
+                                    <span className="editor-subtle">
+                                        Selected: {selectedHostIds.size}/{hosts.length}
+                                    </span>
                                 </div>
+
+                                <div className="editor-subtle">
+                                    {selectedHostSummary}
+                                </div>
+
+                                {!cfg.groupid && <div className="editor-subtle">Select first a host group.</div>}
+                                {cfg.groupid && hosts.length === 0 && <div className="editor-subtle">No hosts loaded for this group.</div>}
+
+                                {hostPickerOpen && hosts.length > 0 && (
+                                    <div className="editor-picker-panel">
+                                        <input
+                                            type="text"
+                                            value={hostSearchTerm}
+                                            onChange={(e) => setHostSearchTerm(e.target.value)}
+                                            placeholder="Filter hosts..."
+                                        />
+                                        <div className="editor-host-list editor-host-list--picker">
+                                            {filteredHosts.length === 0 && <div className="editor-subtle">No hosts match this filter.</div>}
+                                            {filteredHosts.map((host) => (
+                                                <label key={host.hostid} className="editor-host-item">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedHostIds.has(String(host.hostid))}
+                                                        onChange={() => toggleHost(String(host.hostid))}
+                                                    />
+                                                    <span>{host.name}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
                             <div className="editor-label">Filter by</div>
