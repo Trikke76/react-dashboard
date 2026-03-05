@@ -521,8 +521,96 @@ if (is_file($timestate_widget_file)) {
 ?>
 
 <script type="text/babel">
-    const { useState, useEffect, useMemo, useRef } = React;
+    const { useState, useEffect, useMemo, useRef, useCallback } = React;
     const GridLayout = window.ReactGridLayout;
+
+    const createDashboardApiClient = (config) => {
+        const moduleBase = String((config && config.module_base) || '').replace(/\/+$/, '');
+        const candidates = Array.from(new Set([
+            config && config.api_url,
+            config && config.api_fallback_url,
+            `${moduleBase}/modules/react-dashboard/modules/react-dashboard/api.php`,
+            `${moduleBase}/modules/react-dashboard/api.php`,
+            'modules/react-dashboard/modules/react-dashboard/api.php',
+            'modules/react-dashboard/api.php',
+            '/modules/react-dashboard/modules/react-dashboard/api.php',
+            '/modules/react-dashboard/api.php',
+            config && config.api_action_url,
+            `${moduleBase}/zabbix.php?action=react.dashboard.api`,
+            'zabbix.php?action=react.dashboard.api'
+        ].filter(Boolean)));
+
+        const cache = new Map();
+        const inFlight = new Map();
+
+        const toParams = (paramsInput) => (
+            paramsInput instanceof URLSearchParams
+                ? paramsInput
+                : new URLSearchParams(paramsInput || {})
+        );
+
+        const requestJson = async (paramsInput) => {
+            const params = toParams(paramsInput);
+            let lastError = null;
+
+            for (const base of candidates) {
+                const url = `${base}?${params.toString()}`;
+                try {
+                    const response = await fetch(url, { headers: { Accept: 'application/json' } });
+                    const text = await response.text();
+                    let payload = null;
+                    try {
+                        payload = JSON.parse(text);
+                    }
+                    catch (_parseError) {
+                        throw new Error(`API response is geen JSON (${base}). Eerste bytes: ${text.slice(0, 80)}`);
+                    }
+
+                    if (!response.ok) {
+                        throw new Error((payload && payload.error) ? payload.error : `HTTP ${response.status}`);
+                    }
+                    if (payload && typeof payload === 'object' && payload.error) {
+                        throw new Error(payload.error);
+                    }
+
+                    return payload;
+                }
+                catch (err) {
+                    lastError = err;
+                }
+            }
+
+            throw (lastError || new Error('API request failed'));
+        };
+
+        const cachedRequest = async (paramsInput, ttlMs = 15000) => {
+            const params = toParams(paramsInput);
+            const key = params.toString();
+            const now = Date.now();
+            const hit = cache.get(key);
+            if (hit && (now - hit.ts) < ttlMs) {
+                return hit.payload;
+            }
+
+            if (inFlight.has(key)) {
+                return inFlight.get(key);
+            }
+
+            const promise = requestJson(params).then((payload) => {
+                cache.set(key, { ts: Date.now(), payload });
+                inFlight.delete(key);
+                return payload;
+            }).catch((err) => {
+                inFlight.delete(key);
+                throw err;
+            });
+
+            inFlight.set(key, promise);
+            return promise;
+        };
+
+        return { requestJson, cachedRequest };
+    };
 
     const DEFAULT_WIDGET = {
         type: 'Clock',
@@ -901,6 +989,8 @@ if (is_file($timestate_widget_file)) {
     const App = () => {
         const gridWrapRef = useRef(null);
         const [gridWidth, setGridWidth] = useState(1400);
+        const apiClient = useMemo(() => createDashboardApiClient(window.ZABBIX_CONFIG || {}), []);
+        const [globalData, setGlobalData] = useState({ groups: [], refreshedAt: 0 });
         const [layout, setLayout] = useState(() => {
             const saved = localStorage.getItem('zbx_layout_v4');
             if (saved) {
@@ -928,6 +1018,19 @@ if (is_file($timestate_widget_file)) {
                 return next;
             });
         };
+
+        const refreshAllData = useCallback(async () => {
+            try {
+                const groups = await apiClient.cachedRequest({ action_type: 'get_groups' }, 60000);
+                setGlobalData({
+                    groups: Array.isArray(groups) ? groups : [],
+                    refreshedAt: Date.now()
+                });
+            }
+            catch (_error) {
+                setGlobalData((prev) => ({ ...prev, refreshedAt: Date.now() }));
+            }
+        }, [apiClient]);
 
         const removeWidget = (id) => {
             setLayout((prev) => {
@@ -979,6 +1082,12 @@ if (is_file($timestate_widget_file)) {
             return () => observer.disconnect();
         }, []);
 
+        useEffect(() => {
+            refreshAllData();
+            const timer = setInterval(refreshAllData, 60000);
+            return () => clearInterval(timer);
+        }, [refreshAllData]);
+
         const gridCols = gridWidth >= 1600 ? 36 : (gridWidth >= 1200 ? 24 : 12);
 
         const normalizedLayout = useMemo(() => (
@@ -1021,6 +1130,9 @@ if (is_file($timestate_widget_file)) {
                                         settings={w}
                                         updateSettings={(patch) => updateWidget(w.i, patch)}
                                         remove={() => removeWidget(w.i)}
+                                        apiClient={apiClient}
+                                        globalData={globalData}
+                                        refreshAllData={refreshAllData}
                                     />
                                 </div>
                             );

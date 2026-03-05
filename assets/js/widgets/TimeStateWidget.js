@@ -1,4 +1,4 @@
-window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId }) => {
+window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClient, globalData }) => {
     const { useState, useEffect, useMemo, useCallback } = React;
 
     const DEFAULTS = {
@@ -123,67 +123,19 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId }) => {
     const selectedHostIds = useMemo(() => new Set(parseCsvIds(cfg.hostidsCsv)), [cfg.hostidsCsv]);
     const selectedItemIds = useMemo(() => new Set(parseCsvIds(cfg.itemidsCsv)), [cfg.itemidsCsv]);
 
-    const apiCandidates = useMemo(() => {
-        const zbxConfig = window.ZABBIX_CONFIG || {};
-        const moduleBase = String(zbxConfig.module_base || '').replace(/\/+$/, '');
-        return Array.from(new Set([
-            zbxConfig.api_url,
-            zbxConfig.api_fallback_url,
-            `${moduleBase}/modules/react-dashboard/modules/react-dashboard/api.php`,
-            `${moduleBase}/modules/react-dashboard/api.php`,
-            'modules/react-dashboard/modules/react-dashboard/api.php',
-            'modules/react-dashboard/api.php',
-            '/modules/react-dashboard/modules/react-dashboard/api.php',
-            '/modules/react-dashboard/api.php',
-            zbxConfig.api_action_url,
-            `${moduleBase}/zabbix.php?action=react.dashboard.api`,
-            'zabbix.php?action=react.dashboard.api'
-        ].filter(Boolean)));
-    }, []);
-
-    const requestJson = useCallback(async (paramsInput) => {
-        const params = paramsInput instanceof URLSearchParams
-            ? paramsInput
-            : new URLSearchParams(paramsInput);
-
-        let lastError = null;
-
-        for (const base of apiCandidates) {
-            const url = `${base}?${params.toString()}`;
-            try {
-                const response = await fetch(url, {
-                    headers: {
-                        Accept: 'application/json'
-                    }
-                });
-
-                const text = await response.text();
-                let payload = null;
-
-                try {
-                    payload = JSON.parse(text);
-                }
-                catch (_parseError) {
-                    throw new Error(`API response is geen JSON (${base}). Eerste bytes: ${text.slice(0, 80)}`);
-                }
-
-                if (!response.ok) {
-                    throw new Error((payload && payload.error) ? payload.error : `HTTP ${response.status}`);
-                }
-
-                if (payload && typeof payload === 'object' && payload.error) {
-                    throw new Error(payload.error);
-                }
-
-                return payload;
-            }
-            catch (requestError) {
-                lastError = requestError;
-            }
+    const requestJson = useCallback(async (params) => {
+        if (apiClient && typeof apiClient.requestJson === 'function') {
+            return apiClient.requestJson(params);
         }
+        throw new Error('API client unavailable');
+    }, [apiClient]);
 
-        throw (lastError || new Error('API request failed'));
-    }, [apiCandidates]);
+    const cachedJson = useCallback(async (params, ttlMs = 15000) => {
+        if (apiClient && typeof apiClient.cachedRequest === 'function') {
+            return apiClient.cachedRequest(params, ttlMs);
+        }
+        return requestJson(params);
+    }, [apiClient, requestJson]);
 
     const refreshMs = useMemo(() => {
         const sec = Number(cfg.refreshSec) || 30;
@@ -192,13 +144,13 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId }) => {
 
     const fetchGroups = useCallback(async () => {
         try {
-            const payload = await requestJson({ action_type: 'get_groups' });
+            const payload = await cachedJson({ action_type: 'get_groups' }, 60000);
             setGroups(Array.isArray(payload) ? payload : []);
         }
         catch (_err) {
             setGroups([]);
         }
-    }, [requestJson]);
+    }, [cachedJson]);
 
     const fetchHosts = useCallback(async (groupid) => {
         if (!groupid) {
@@ -207,13 +159,13 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId }) => {
         }
 
         try {
-            const payload = await requestJson({ action_type: 'get_hosts_by_group', groupid });
+            const payload = await cachedJson({ action_type: 'get_hosts_by_group', groupid }, 30000);
             setHosts(Array.isArray(payload) ? payload : []);
         }
         catch (_err) {
             setHosts([]);
         }
-    }, [requestJson]);
+    }, [cachedJson]);
 
     const fetchItemSuggestions = useCallback(async () => {
         if (!cfg.hostidsCsv) {
@@ -223,13 +175,13 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId }) => {
 
         setItemsLoading(true);
         try {
-            const payload = await requestJson({
+            const payload = await cachedJson({
                 action_type: 'timestate_items',
                 hostids_csv: String(cfg.hostidsCsv || ''),
                 item_key_search: String(cfg.itemKeySearch || ''),
                 item_name_search: String(cfg.itemNameSearch || ''),
                 max_rows: String(Math.max(1, Number(cfg.maxRows || 20)))
-            });
+            }, 6000);
 
             setItemSuggestions(Array.isArray(payload.items) ? payload.items : []);
         }
@@ -239,7 +191,7 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId }) => {
         finally {
             setItemsLoading(false);
         }
-    }, [requestJson, cfg.hostidsCsv, cfg.itemKeySearch, cfg.itemNameSearch, cfg.maxRows]);
+    }, [cachedJson, cfg.hostidsCsv, cfg.itemKeySearch, cfg.itemNameSearch, cfg.maxRows]);
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -306,6 +258,12 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId }) => {
             fetchHosts(cfg.groupid);
         }
     }, [editMode, cfg.groupid, fetchGroups, fetchHosts]);
+
+    useEffect(() => {
+        if (globalData && Array.isArray(globalData.groups) && globalData.groups.length > 0) {
+            setGroups(globalData.groups);
+        }
+    }, [globalData]);
 
     useEffect(() => {
         if (!editMode) {
