@@ -22,6 +22,10 @@ class ReactDashboard extends CController {
     private const MAX_HISTORY_CALLS_PER_REQUEST = 250;
     private const MAX_ITEMS_EVALUATED_PER_REQUEST = 400;
 
+    protected function init(): void {
+        $this->disableCsrfValidation();
+    }
+
     protected function checkInput(): bool {
         return true;
     }

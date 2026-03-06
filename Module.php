@@ -9,7 +9,7 @@ class Module extends CModule {
             ->findOrAdd(_('Monitoring'))
             ->getSubmenu()
             ->insertAfter(_('Discovery'),
-                (new CMenuItem(_('React Dashboard')))->setAction('module.react.dashboard')
+                (new CMenuItem(_('React Dashboard')))->setAction('react.dashboard')
             );
     }
 }
