@@ -773,9 +773,11 @@ if (is_file($timestate_widget_file)) {
             let lastError = null;
 
             for (const base of candidates) {
-                const url = String(base).replace(/\?.*$/, '');
+                const baseUrl = String(base);
+                const hasAction = /[?&]action=/.test(baseUrl);
+                const separator = baseUrl.includes('?') ? '&' : '?';
+                const url = hasAction ? baseUrl : `${baseUrl}${separator}action=react.dashboard`;
                 const body = new URLSearchParams(params);
-                body.set('action', 'react.dashboard');
                 if (csrfToken) {
                     body.set('_csrf_token', csrfToken);
                 }
