@@ -572,18 +572,50 @@ $page->show();
 
     .editor-mapping-row {
         display: grid;
-        grid-template-columns: 92px 1fr 1fr 48px 30px;
+        grid-template-columns: 92px 1fr 1fr minmax(170px, 210px) 30px;
         gap: 6px;
         align-items: center;
     }
 
-    .editor-mapping-row input[type="color"] {
+    .zbx-color-picker {
+        display: grid;
+        grid-template-columns: 20px minmax(0, 1fr) 42px;
+        align-items: center;
+        gap: 5px;
+        min-width: 0;
+    }
+
+    .zbx-color-preview {
+        width: 18px;
+        height: 18px;
+        border-radius: 3px;
+        border: 1px solid var(--border-color);
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+    }
+
+    .zbx-color-picker .zbx-color-text {
         width: 100%;
+        min-width: 0;
+        box-sizing: border-box;
         height: 30px;
         border: 1px solid var(--border-color);
         background: var(--input-bg);
-        padding: 2px;
+        color: var(--text-color);
         border-radius: 2px;
+        padding: 0 8px;
+        font-size: 12px;
+        font-family: var(--font-mono);
+        text-transform: uppercase;
+    }
+
+    .zbx-color-picker .zbx-color-native {
+        width: 100%;
+        height: 30px;
+        box-sizing: border-box;
+        border: 1px solid var(--border-color);
+        border-radius: 2px;
+        background: var(--input-bg);
+        padding: 2px;
     }
 
     .editor-range-fields {
@@ -849,6 +881,9 @@ $page->show();
             right: auto;
             width: 100%;
         }
+        .editor-mapping-row {
+            grid-template-columns: 1fr;
+        }
         .editor-grid { grid-template-columns: 1fr; }
         .editor-dataset-grid { grid-template-columns: 1fr; }
         .timestate-row { grid-template-columns: 1fr; gap: 4px; }
@@ -869,7 +904,21 @@ $zabbix_config = [
 
 <?php
 $widgets_dir = $data['module_path'] . '/assets/js/widgets';
+$components_dir = $data['module_path'] . '/assets/js/components';
+$color_picker_file = $components_dir . '/ColorPickerField.js';
 $timestate_widget_file = $widgets_dir . '/TimeStateWidget.js';
+
+if (is_file($color_picker_file)) {
+    $component_script = file_get_contents($color_picker_file);
+    if ($component_script === false) {
+        $component_script = '';
+    }
+    $component_script = preg_replace('~</script~i', '<\\/script', $component_script);
+    echo '<script type="text/babel" data-presets="react">' . "\n";
+    echo $component_script;
+    echo "\n</script>\n";
+}
+
 if (is_file($timestate_widget_file)) {
     $widget_script = file_get_contents($timestate_widget_file);
     if ($widget_script === false) {

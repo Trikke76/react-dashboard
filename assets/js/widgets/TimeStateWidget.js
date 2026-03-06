@@ -1,5 +1,6 @@
 window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClient, globalData }) => {
     const { useState, useEffect, useMemo, useCallback } = React;
+    const ColorPickerField = window.ColorPickerField;
 
     const DEFAULT_STATE_MAP = 'value:1=OK|#2E7D32,value:0=Problem|#C62828';
     const MAX_DATASETS = 10;
@@ -1264,11 +1265,19 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                                                                         onChange={(e) => updateDatasetMapping(idx, mappingIdx, { text: e.target.value })}
                                                                         placeholder="label"
                                                                     />
-                                                                    <input
-                                                                        type="color"
-                                                                        value={row.color || '#607D8B'}
-                                                                        onChange={(e) => updateDatasetMapping(idx, mappingIdx, { color: e.target.value })}
-                                                                    />
+                                                                    {ColorPickerField ? (
+                                                                        <ColorPickerField
+                                                                            value={row.color || '#607D8B'}
+                                                                            defaultColor="#607D8B"
+                                                                            onChange={(nextColor) => updateDatasetMapping(idx, mappingIdx, { color: nextColor })}
+                                                                        />
+                                                                    ) : (
+                                                                        <input
+                                                                            type="color"
+                                                                            value={row.color || '#607D8B'}
+                                                                            onChange={(e) => updateDatasetMapping(idx, mappingIdx, { color: e.target.value })}
+                                                                        />
+                                                                    )}
                                                                     <button className="btn-zbx btn-danger" type="button" onClick={() => removeDatasetMapping(idx, mappingIdx)}>✕</button>
                                                                 </div>
                                                                 <div className="editor-subtle">{mappingConditionHint(row.type)}</div>
