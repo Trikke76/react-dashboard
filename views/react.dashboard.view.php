@@ -721,9 +721,9 @@ $page->show();
 $module_base = rtrim(dirname($_SERVER['SCRIPT_NAME']), '/');
 $zabbix_config = [
     'module_base' => $module_base,
-    'api_url' => $module_base . '/zabbix.php?action=react.dashboard',
-    'api_fallback_url' => $module_base . '/zabbix.php?action=react.dashboard',
-    'csrf_token' => CCsrfTokenHelper::get('react.dashboard')
+    'api_url' => $module_base . '/zabbix.php?action=module.react.dashboard',
+    'api_fallback_url' => $module_base . '/zabbix.php?action=module.react.dashboard',
+    'csrf_token' => CCsrfTokenHelper::get('module.react.dashboard')
 ];
 ?>
 <script>
@@ -754,6 +754,8 @@ if (is_file($timestate_widget_file)) {
         const candidates = Array.from(new Set([
             config && config.api_url,
             config && config.api_fallback_url,
+            `${moduleBase}/zabbix.php?action=module.react.dashboard`,
+            'zabbix.php?action=module.react.dashboard',
             `${moduleBase}/zabbix.php?action=react.dashboard`,
             'zabbix.php?action=react.dashboard'
         ].filter(Boolean)));

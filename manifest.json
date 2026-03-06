@@ -6,6 +6,11 @@
     "namespace": "ReactDashboard",
     "description": "Custom React Widgets voor Zabbix.",
     "actions": {
+        "module.react.dashboard": {
+            "class": "ReactDashboard",
+            "view": "react.dashboard.view",
+            "layout": "layout.htmlpage"
+        },
         "react.dashboard": {
             "class": "ReactDashboard",
             "view": "react.dashboard.view",
