@@ -1283,12 +1283,6 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                                                                             placeholder={mappingConditionPlaceholder(row.type)}
                                                                         />
                                                                     )}
-                                                                    <input
-                                                                        type="text"
-                                                                        value={row.text}
-                                                                        onChange={(e) => updateDatasetMapping(idx, mappingIdx, { text: e.target.value })}
-                                                                        placeholder="display text (optional)"
-                                                                    />
                                                                     {ColorPickerField ? (
                                                                         <ColorPickerField
                                                                             value={row.color || '#607D8B'}

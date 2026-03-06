@@ -572,7 +572,7 @@ $page->show();
 
     .editor-mapping-row {
         display: grid;
-        grid-template-columns: 92px 1fr 1fr 72px 30px;
+        grid-template-columns: 92px 1fr 72px 30px;
         gap: 6px;
         align-items: center;
     }
