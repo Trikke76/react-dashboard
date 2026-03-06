@@ -15,29 +15,148 @@ $page->show();
 <style>
     :root {
         <?php $is_dark = (isset($data['user_theme']) && strpos($data['user_theme'], 'dark') !== false); ?>
-        --bg-color: <?php echo $is_dark ? '#2b2b2b' : '#ebedef'; ?>;
-        --card-bg: <?php echo $is_dark ? '#383838' : '#ffffff'; ?>;
-        --text-color: <?php echo $is_dark ? '#f2f2f2' : '#333333'; ?>;
-        --header-bg: <?php echo $is_dark ? '#4f4f4f' : '#3c5559'; ?>;
-        --border-color: <?php echo $is_dark ? '#555555' : '#dfe3e8'; ?>;
-        --subtle-text: <?php echo $is_dark ? '#b8c1ca' : '#6b7783'; ?>;
-        --panel-bg: <?php echo $is_dark ? '#30353b' : '#f5f7f9'; ?>;
-        --input-bg: <?php echo $is_dark ? '#252a30' : '#ffffff'; ?>;
-        --segment-bg: <?php echo $is_dark ? '#252a30' : '#edf1f4'; ?>;
-        --segment-active: <?php echo $is_dark ? '#56616f' : '#d2dde8'; ?>;
+        --bg-color: <?php echo $is_dark ? '#0b1016' : '#eef2f7'; ?>;
+        --bg-elev-1: <?php echo $is_dark ? '#111822' : '#f9fbfd'; ?>;
+        --card-bg: <?php echo $is_dark ? '#171f2b' : '#ffffff'; ?>;
+        --text-color: <?php echo $is_dark ? '#dce4ef' : '#1f2937'; ?>;
+        --header-bg: <?php echo $is_dark ? '#202a37' : '#e6ecf4'; ?>;
+        --border-color: <?php echo $is_dark ? '#2a3546' : '#d7e0ea'; ?>;
+        --subtle-text: <?php echo $is_dark ? '#93a4b8' : '#5f7188'; ?>;
+        --panel-bg: <?php echo $is_dark ? '#131b25' : '#f6f9fc'; ?>;
+        --input-bg: <?php echo $is_dark ? '#0f1620' : '#ffffff'; ?>;
+        --segment-bg: <?php echo $is_dark ? '#121a25' : '#edf2f7'; ?>;
+        --segment-active: <?php echo $is_dark ? '#28384d' : '#d8e4f1'; ?>;
+        --accent-color: #4ea1f3;
+        --accent-color-soft: rgba(78, 161, 243, 0.2);
+        --success-color: #73bf69;
+        --font-sans: "IBM Plex Sans", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+        --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     }
 
     body {
-        background: var(--bg-color);
+        background:
+            radial-gradient(1300px 600px at 10% -10%, rgba(78, 161, 243, 0.13), transparent 60%),
+            radial-gradient(900px 500px at 100% 0%, rgba(115, 191, 105, 0.12), transparent 55%),
+            var(--bg-color);
         color: var(--text-color);
+        font-family: var(--font-sans);
         margin: 0;
         padding: 0;
+    }
+
+    #react-root {
+        min-height: calc(100vh - 76px);
+    }
+
+    .dashboard-shell {
+        padding: 18px;
+    }
+
+    .dashboard-topbar {
+        margin-bottom: 14px;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 46%), var(--bg-elev-1);
+        padding: 12px 14px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+    }
+
+    .dashboard-title {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+    }
+
+    .dashboard-title-block {
+        min-width: 0;
+    }
+
+    .dashboard-meta {
+        margin-top: 3px;
+        color: var(--subtle-text);
+        font-size: 12px;
+        font-family: var(--font-mono);
+    }
+
+    .dashboard-actions {
+        position: relative;
+        flex-shrink: 0;
+    }
+
+    .btn-add-widget {
+        height: 34px;
+        padding: 0 14px;
+        border-radius: 6px;
+        border: 1px solid #406f41;
+        background: linear-gradient(180deg, #6dbb65, #5ea356);
+        color: #0c1910;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+        cursor: pointer;
+    }
+
+    .btn-add-widget:hover {
+        filter: brightness(1.06);
+    }
+
+    .add-widget-menu {
+        position: absolute;
+        right: 0;
+        top: calc(100% + 8px);
+        min-width: 190px;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        background: var(--panel-bg);
+        box-shadow: 0 14px 28px rgba(0, 0, 0, 0.35);
+        padding: 6px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        z-index: 120;
+    }
+
+    .add-widget-item {
+        width: 100%;
+        text-align: left;
+        border: 1px solid transparent;
+        background: transparent;
+        color: var(--text-color);
+        border-radius: 5px;
+        height: 34px;
+        padding: 0 10px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    .add-widget-item:hover {
+        background: var(--segment-active);
+        border-color: var(--border-color);
+    }
+
+    .dashboard-grid-host {
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        background: var(--bg-elev-1);
+        padding: 8px;
+    }
+
+    .react-grid-item.react-grid-placeholder {
+        background: var(--accent-color-soft);
+        border: 1px dashed var(--accent-color);
+        border-radius: 6px;
     }
 
     .widget-card {
         background: var(--card-bg);
         border: 1px solid var(--border-color);
-        border-radius: 4px;
+        border-radius: 6px;
+        box-shadow: 0 8px 22px rgba(0, 0, 0, 0.24);
         display: flex;
         flex-direction: column;
         height: 100%;
@@ -46,7 +165,8 @@ $page->show();
 
     .widget-header {
         padding: 8px 12px;
-        background: var(--header-bg);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 52%), var(--header-bg);
+        border-bottom: 1px solid var(--border-color);
         color: #fff;
         display: flex;
         justify-content: space-between;
@@ -72,10 +192,10 @@ $page->show();
     }
 
     .btn-zbx {
-        background: rgba(0, 0, 0, 0.22);
-        border: 1px solid rgba(255, 255, 255, 0.28);
-        color: #fff;
-        border-radius: 2px;
+        background: rgba(8, 13, 18, 0.55);
+        border: 1px solid rgba(152, 170, 190, 0.35);
+        color: #dce4ef;
+        border-radius: 4px;
         font-size: 11px;
         font-weight: 700;
         line-height: 1;
@@ -84,7 +204,7 @@ $page->show();
         cursor: pointer;
     }
 
-    .btn-zbx:hover { background: rgba(0, 0, 0, 0.4); }
+    .btn-zbx:hover { background: rgba(19, 29, 42, 0.95); }
 
     .btn-danger {
         width: 26px;
@@ -146,7 +266,7 @@ $page->show();
     .clock-timezone {
         font-size: var(--clock-date-size, 12px);
         color: var(--subtle-text);
-        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-family: var(--font-mono);
     }
 
     .clock-face {
@@ -711,6 +831,24 @@ $page->show();
     }
 
     @media (max-width: 900px) {
+        .dashboard-shell {
+            padding: 10px;
+        }
+        .dashboard-topbar {
+            flex-direction: column;
+            align-items: stretch;
+        }
+        .dashboard-actions {
+            width: 100%;
+        }
+        .btn-add-widget {
+            width: 100%;
+        }
+        .add-widget-menu {
+            left: 0;
+            right: auto;
+            width: 100%;
+        }
         .editor-grid { grid-template-columns: 1fr; }
         .editor-dataset-grid { grid-template-columns: 1fr; }
         .timestate-row { grid-template-columns: 1fr; gap: 4px; }
@@ -1347,6 +1485,7 @@ if (is_file($timestate_widget_file)) {
 
     const App = () => {
         const gridWrapRef = useRef(null);
+        const addWidgetMenuRef = useRef(null);
         const [gridWidth, setGridWidth] = useState(() => {
             const root = document.getElementById('react-root');
             if (root) {
@@ -1359,6 +1498,7 @@ if (is_file($timestate_widget_file)) {
         });
         const apiClient = useMemo(() => createDashboardApiClient(window.ZABBIX_CONFIG || {}), []);
         const [globalData, setGlobalData] = useState({ groups: [], refreshedAt: 0 });
+        const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
         const [layout, setLayout] = useState(() => {
             const fallbackLayout = [
                 mergeWithDefaults({ i: 'w1', x: 0, y: 0, w: 4, h: 8, ...DEFAULT_WIDGET }, 'w1'),
@@ -1506,7 +1646,33 @@ if (is_file($timestate_widget_file)) {
             return () => clearInterval(timer);
         }, [refreshAllData]);
 
+        useEffect(() => {
+            const onDocumentMouseDown = (event) => {
+                if (!addWidgetMenuRef.current) {
+                    return;
+                }
+                if (!addWidgetMenuRef.current.contains(event.target)) {
+                    setIsAddMenuOpen(false);
+                }
+            };
+            const onDocumentKeyDown = (event) => {
+                if (event.key === 'Escape') {
+                    setIsAddMenuOpen(false);
+                }
+            };
+
+            document.addEventListener('mousedown', onDocumentMouseDown);
+            document.addEventListener('keydown', onDocumentKeyDown);
+            return () => {
+                document.removeEventListener('mousedown', onDocumentMouseDown);
+                document.removeEventListener('keydown', onDocumentKeyDown);
+            };
+        }, []);
+
         const gridCols = gridWidth >= 1600 ? 36 : (gridWidth >= 1200 ? 24 : 12);
+        const refreshedAtLabel = globalData.refreshedAt > 0
+            ? new Date(globalData.refreshedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+            : '--:--:--';
 
         const normalizedLayout = useMemo(() => (
             layout.map((item) => {
@@ -1518,48 +1684,88 @@ if (is_file($timestate_widget_file)) {
         ), [layout, gridCols]);
 
         return (
-            <div style={{ padding: '20px' }} ref={gridWrapRef}>
-                <button className="btn-zbx" style={{ marginBottom: 20, marginRight: 8, background: '#248ad2', borderColor: '#4aa1de' }} onClick={() => addWidget('Clock')}>
-                    + Add Clock
-                </button>
-                <button className="btn-zbx" style={{ marginBottom: 20, background: '#2f7d4a', borderColor: '#56a16e' }} onClick={() => addWidget('TimeState')}>
-                    + Add Time State
-                </button>
+            <div className="dashboard-shell" ref={gridWrapRef}>
+                <div className="dashboard-topbar">
+                    <div className="dashboard-title-block">
+                        <h1 className="dashboard-title">React Dashboard</h1>
+                        <div className="dashboard-meta">
+                            {`${layout.length} widgets | ${globalData.groups.length} groups | refreshed ${refreshedAtLabel}`}
+                        </div>
+                    </div>
 
-                <GridLayout
-                    className="layout"
-                    layout={normalizedLayout}
-                    cols={gridCols}
-                    rowHeight={30}
-                    width={gridWidth}
-                    compactType={null}
-                    draggableHandle=".widget-header"
-                    onLayoutChange={onLayoutChange}
-                    onDragStop={onDragStop}
-                    onResizeStop={onResizeStop}
-                >
-                    {layout.map((w) => (
-                        (() => {
-                            const WidgetComponent = (w.type === 'TimeState' && window.TimeStateWidget)
-                                ? window.TimeStateWidget
-                                : ClockWidget;
+                    <div className="dashboard-actions" ref={addWidgetMenuRef}>
+                        <button
+                            className="btn-add-widget"
+                            type="button"
+                            onClick={() => setIsAddMenuOpen((open) => !open)}
+                            aria-haspopup="menu"
+                            aria-expanded={isAddMenuOpen ? 'true' : 'false'}
+                        >
+                            + Add widget
+                        </button>
+                        {isAddMenuOpen && (
+                            <div className="add-widget-menu" role="menu">
+                                <button
+                                    type="button"
+                                    className="add-widget-item"
+                                    onClick={() => {
+                                        addWidget('Clock');
+                                        setIsAddMenuOpen(false);
+                                    }}
+                                >
+                                    Clock widget
+                                </button>
+                                <button
+                                    type="button"
+                                    className="add-widget-item"
+                                    onClick={() => {
+                                        addWidget('TimeState');
+                                        setIsAddMenuOpen(false);
+                                    }}
+                                >
+                                    Time state widget
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
 
-                            return (
-                                <div key={w.i}>
-                                    <WidgetComponent
-                                        widgetId={w.i}
-                                        settings={w}
-                                        updateSettings={(patch) => updateWidget(w.i, patch)}
-                                        remove={() => removeWidget(w.i)}
-                                        apiClient={apiClient}
-                                        globalData={globalData}
-                                        refreshAllData={refreshAllData}
-                                    />
-                                </div>
-                            );
-                        })()
-                    ))}
-                </GridLayout>
+                <div className="dashboard-grid-host">
+                    <GridLayout
+                        className="layout"
+                        layout={normalizedLayout}
+                        cols={gridCols}
+                        rowHeight={30}
+                        width={gridWidth}
+                        compactType={null}
+                        draggableHandle=".widget-header"
+                        onLayoutChange={onLayoutChange}
+                        onDragStop={onDragStop}
+                        onResizeStop={onResizeStop}
+                    >
+                        {layout.map((w) => (
+                            (() => {
+                                const WidgetComponent = (w.type === 'TimeState' && window.TimeStateWidget)
+                                    ? window.TimeStateWidget
+                                    : ClockWidget;
+
+                                return (
+                                    <div key={w.i}>
+                                        <WidgetComponent
+                                            widgetId={w.i}
+                                            settings={w}
+                                            updateSettings={(patch) => updateWidget(w.i, patch)}
+                                            remove={() => removeWidget(w.i)}
+                                            apiClient={apiClient}
+                                            globalData={globalData}
+                                            refreshAllData={refreshAllData}
+                                        />
+                                    </div>
+                                );
+                            })()
+                        ))}
+                    </GridLayout>
+                </div>
             </div>
         );
     };
