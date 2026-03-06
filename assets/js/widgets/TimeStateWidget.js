@@ -71,6 +71,7 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
     const [hostSearchTerm, setHostSearchTerm] = useState('');
 
     const [activeDatasetIdx, setActiveDatasetIdx] = useState(0);
+    const [collapsedDatasets, setCollapsedDatasets] = useState({});
     const [collapsedGroups, setCollapsedGroups] = useState({});
     const [itemSuggestionsByDataset, setItemSuggestionsByDataset] = useState({});
     const [itemSuggestionSignatures, setItemSuggestionSignatures] = useState({});
@@ -283,6 +284,26 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
             setActiveDatasetIdx(safeActiveDatasetIdx);
         }
     }, [safeActiveDatasetIdx, activeDatasetIdx]);
+
+    useEffect(() => {
+        setCollapsedDatasets((prev) => {
+            const next = {};
+            datasets.forEach((_, idx) => {
+                if (Object.prototype.hasOwnProperty.call(prev, idx)) {
+                    next[idx] = !!prev[idx];
+                    return;
+                }
+                next[idx] = !(datasets.length === 1 || idx === safeActiveDatasetIdx);
+            });
+
+            const prevKeys = Object.keys(prev);
+            const nextKeys = Object.keys(next);
+            const unchanged = prevKeys.length === nextKeys.length
+                && nextKeys.every((key) => prev[key] === next[key]);
+
+            return unchanged ? prev : next;
+        });
+    }, [datasets, safeActiveDatasetIdx]);
 
     useEffect(() => {
         const raw = String(cfg.datasetsJson || '').trim();
@@ -509,6 +530,10 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
 
     const toggleGroup = (name) => {
         setCollapsedGroups((prev) => ({ ...prev, [name]: !prev[name] }));
+    };
+
+    const toggleDatasetCollapsed = (datasetIdx) => {
+        setCollapsedDatasets((prev) => ({ ...prev, [datasetIdx]: !prev[datasetIdx] }));
     };
 
     const normalizeMappingCondition = (type, current) => {
@@ -1088,16 +1113,36 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                                 <div className="editor-datasets">
                                     {datasets.map((dataSet, idx) => {
                                         const dataSetMappings = getDatasetMappingRows(dataSet);
+                                        const isCollapsed = collapsedDatasets[idx] === true;
+                                        const collapsedSummary = `${dataSet.filter_type === 'name' ? 'Item name' : 'Item key'}: ${String(dataSet.filter_value || '').trim() || 'No filter'} | rows ${dataSet.max_rows} | ${dataSet.lookback_hours}h`;
 
                                         return (
                                             <div key={`dataset-${idx}`} className={`editor-dataset ${idx === safeActiveDatasetIdx ? 'is-active' : ''}`}>
-                                                <div className="editor-inline-actions">
-                                                    <strong>Data source #{idx + 1}</strong>
-                                                    <button className="btn-zbx" type="button" onClick={() => setActiveDatasetIdx(idx)}>Use</button>
-                                                    <button className="btn-zbx btn-danger" type="button" onClick={() => removeDataset(idx)} disabled={datasets.length <= 1}>✕</button>
+                                                <div className="editor-dataset-header">
+                                                    <div className="editor-dataset-title">
+                                                        <strong>Data source #{idx + 1}</strong>
+                                                        <button
+                                                            className="btn-zbx"
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setActiveDatasetIdx(idx);
+                                                                setCollapsedDatasets((prev) => ({ ...prev, [idx]: false }));
+                                                            }}
+                                                        >
+                                                            Use
+                                                        </button>
+                                                        <button className="btn-zbx btn-danger" type="button" onClick={() => removeDataset(idx)} disabled={datasets.length <= 1}>✕</button>
+                                                    </div>
+                                                    <button className="btn-zbx" type="button" onClick={() => toggleDatasetCollapsed(idx)}>
+                                                        {isCollapsed ? 'Expand' : 'Collapse'}
+                                                    </button>
                                                 </div>
 
-                                                <div className="editor-dataset-grid">
+                                                {isCollapsed && <div className="editor-subtle">{collapsedSummary}</div>}
+
+                                                {!isCollapsed && (
+                                                    <>
+                                                        <div className="editor-dataset-grid">
                                                     <label>
                                                         <span className="editor-subtle">Name</span>
                                                         <input type="text" value={dataSet.name} onChange={(e) => updateDataset(idx, { name: e.target.value })} />
@@ -1302,7 +1347,9 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                                                             <button className="btn-zbx" type="button" onClick={() => addDatasetMapping(idx)}>Add mapping</button>
                                                         </div>
                                                     </div>
-                                                </div>
+                                                        </div>
+                                                    </>
+                                                )}
                                             </div>
                                         );
                                     })}

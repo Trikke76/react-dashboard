@@ -495,6 +495,20 @@ $page->show();
         gap: 8px;
     }
 
+    .editor-dataset-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .editor-dataset-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
     .editor-dataset.is-active {
         border-color: #7f9fba;
         box-shadow: inset 0 0 0 1px rgba(138, 177, 206, 0.25);
@@ -641,13 +655,13 @@ $page->show();
 
     .rd-color-grid {
         display: grid;
-        grid-template-columns: repeat(8, minmax(0, 1fr));
+        grid-template-columns: repeat(10, minmax(0, 1fr));
         gap: 8px;
     }
 
     .rd-color-swatch {
         width: 100%;
-        height: 24px;
+        aspect-ratio: 1 / 1;
         border-radius: 999px;
         border: 1px solid var(--border-color);
         box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);

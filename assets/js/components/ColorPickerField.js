@@ -192,7 +192,11 @@ window.ReactDashboardColorPickerField = ({
         }
 
         const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-        applyHsl({ ...customHsl, h: normalizeHue(angle) });
+        const distance = Math.sqrt((dx * dx) + (dy * dy));
+        const maxRadius = Math.max(1, Math.min(rect.width, rect.height) / 2);
+        const saturation = clamp((distance / maxRadius) * 100, 0, 100);
+
+        applyHsl({ ...customHsl, h: normalizeHue(angle), s: saturation });
     };
 
     useEffect(() => {
@@ -283,9 +287,9 @@ window.ReactDashboardColorPickerField = ({
     }, [harmonyMode, customHsl]);
 
     const wheelMarkerAngle = (customHsl.h * Math.PI) / 180;
-    const markerRadius = 38;
-    const wheelMarkerX = 50 + (Math.cos(wheelMarkerAngle) * markerRadius);
-    const wheelMarkerY = 50 + (Math.sin(wheelMarkerAngle) * markerRadius);
+    const markerRadiusPercent = (clamp(customHsl.s, 0, 100) / 100) * 44;
+    const wheelMarkerX = 50 + (Math.cos(wheelMarkerAngle) * markerRadiusPercent);
+    const wheelMarkerY = 50 + (Math.sin(wheelMarkerAngle) * markerRadiusPercent);
     const isCustomValid = /^#[0-9A-F]{6}$/.test(String(customHex || '').trim().toUpperCase());
 
     return (
