@@ -23,17 +23,7 @@ class ReactDashboard extends CController {
     private const MAX_ITEMS_EVALUATED_PER_REQUEST = 400;
 
     protected function checkInput(): bool {
-        $action = (string) $this->req('action_type', '');
-        if ($action === '') {
-            return true;
-        }
-
-        return in_array($action, [
-            'get_groups',
-            'get_hosts_by_group',
-            'timestate_items',
-            'timestate_data'
-        ], true);
+        return true;
     }
 
     protected function checkPermissions(): bool {

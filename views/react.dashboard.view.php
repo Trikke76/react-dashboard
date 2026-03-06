@@ -769,91 +769,37 @@ if (is_file($timestate_widget_file)) {
 
         const requestJson = async (paramsInput) => {
             const params = toParams(paramsInput);
-            const csrfToken = String((config && config.csrf_token) || '');
             let lastError = null;
 
             for (const base of candidates) {
-                const baseUrl = String(base);
-                const hasAction = /[?&]action=/.test(baseUrl);
-                const separator = baseUrl.includes('?') ? '&' : '?';
-                const urlWithAction = hasAction ? baseUrl : `${baseUrl}${separator}action=react.dashboard`;
-                const bareUrl = baseUrl.replace(/\?.*$/, '');
-                const urls = Array.from(new Set([urlWithAction, bareUrl]));
-
-                for (const url of urls) {
-                    const body = new URLSearchParams(params);
-                    body.set('action', 'react.dashboard');
-                    if (csrfToken) {
-                        body.set('_csrf_token', csrfToken);
-                        body.set('csrf_token', csrfToken);
-                    }
-
+                const separator = String(base).includes('?') ? '&' : '?';
+                const url = `${base}${separator}${params.toString()}`;
+                try {
+                    const response = await fetch(url, {
+                        method: 'GET',
+                        credentials: 'same-origin',
+                        headers: { Accept: 'application/json' }
+                    });
+                    const text = await response.text();
+                    let payload = null;
                     try {
-                        const response = await fetch(url, {
-                            method: 'POST',
-                            credentials: 'same-origin',
-                            headers: {
-                                'Content-Type': 'application/x-www-form-urlencoded',
-                                'X-Requested-With': 'XMLHttpRequest',
-                                Accept: 'application/json'
-                            },
-                            body: body.toString()
-                        });
-                        const text = await response.text();
-                        let payload = null;
-                        try {
-                            payload = JSON.parse(text);
-                        }
-                        catch (_parseError) {
-                            throw new Error(`API response is geen JSON (${url}). Eerste bytes: ${text.slice(0, 80)}`);
-                        }
-
-                        if (!response.ok) {
-                            throw new Error((payload && payload.error) ? payload.error : `HTTP ${response.status}`);
-                        }
-                        if (payload && typeof payload === 'object' && payload.error) {
-                            throw new Error(payload.error);
-                        }
-
-                        return payload;
+                        payload = JSON.parse(text);
                     }
-                    catch (err) {
-                        lastError = err;
+                    catch (_parseError) {
+                        throw new Error(`API response is geen JSON (${url}). Eerste bytes: ${text.slice(0, 80)}`);
                     }
 
-                    try {
-                        const query = new URLSearchParams(params);
-                        query.set('action', 'react.dashboard');
-                        const querySeparator = url.includes('?') ? '&' : '?';
-                        const getUrl = `${url}${querySeparator}${query.toString()}`;
-                        const response = await fetch(getUrl, {
-                            method: 'GET',
-                            credentials: 'same-origin',
-                            headers: {
-                                Accept: 'application/json'
-                            }
-                        });
-                        const text = await response.text();
-                        let payload = null;
-                        try {
-                            payload = JSON.parse(text);
-                        }
-                        catch (_parseError) {
-                            throw new Error(`API response is geen JSON (${getUrl}). Eerste bytes: ${text.slice(0, 80)}`);
-                        }
-
-                        if (!response.ok) {
-                            throw new Error((payload && payload.error) ? payload.error : `HTTP ${response.status}`);
-                        }
-                        if (payload && typeof payload === 'object' && payload.error) {
-                            throw new Error(payload.error);
-                        }
-
-                        return payload;
+                    if (!response.ok) {
+                        throw new Error((payload && payload.error) ? payload.error : `HTTP ${response.status}`);
                     }
-                    catch (err) {
-                        lastError = err;
+                    if (payload && typeof payload === 'object' && payload.error) {
+                        throw new Error(payload.error);
                     }
+
+                    return payload;
+                }
+                catch (err) {
+                    lastError = err;
                 }
             }
 
