@@ -578,6 +578,7 @@ $page->show();
     }
 
     .zbx-color-picker {
+        position: relative;
         display: grid;
         grid-template-columns: 20px 42px;
         align-items: center;
@@ -593,19 +594,114 @@ $page->show();
         box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
     }
 
-    .zbx-color-picker .zbx-color-native {
+    .zbx-color-trigger {
         width: 100%;
         height: 30px;
-        box-sizing: border-box;
+        padding: 0;
         border: 1px solid var(--border-color);
         border-radius: 2px;
         background: var(--input-bg);
-        padding: 2px;
+        cursor: pointer;
+        position: relative;
     }
 
-    /* Hide any legacy hex text input if an older picker implementation is present. */
-    .editor-mapping-row .zbx-color-text {
-        display: none !important;
+    .zbx-color-trigger-swatch {
+        position: absolute;
+        inset: 4px;
+        border-radius: 1px;
+        border: 1px solid rgba(255, 255, 255, 0.15);
+    }
+
+    .zbx-color-popover {
+        position: absolute;
+        top: calc(100% + 6px);
+        right: 0;
+        width: 220px;
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        background: var(--panel-bg);
+        box-shadow: 0 14px 28px rgba(0, 0, 0, 0.4);
+        padding: 8px;
+        z-index: 220;
+    }
+
+    .zbx-color-sv {
+        position: relative;
+        height: 132px;
+        border: 1px solid var(--border-color);
+        border-radius: 3px;
+        overflow: hidden;
+        cursor: crosshair;
+    }
+
+    .zbx-color-sv-white {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(to right, #fff, rgba(255, 255, 255, 0));
+    }
+
+    .zbx-color-sv-black {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(to top, #000, rgba(0, 0, 0, 0));
+    }
+
+    .zbx-color-sv-cursor {
+        position: absolute;
+        width: 10px;
+        height: 10px;
+        margin-left: -5px;
+        margin-top: -5px;
+        border-radius: 50%;
+        border: 2px solid #fff;
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+        pointer-events: none;
+    }
+
+    .zbx-color-hue {
+        width: 100%;
+        margin-top: 8px;
+    }
+
+    .zbx-color-hue-preview {
+        margin-top: 6px;
+        height: 16px;
+        border-radius: 2px;
+        border: 1px solid var(--border-color);
+    }
+
+    .zbx-color-presets {
+        margin-top: 8px;
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: 4px;
+    }
+
+    .zbx-color-preset {
+        width: 100%;
+        height: 16px;
+        border: 1px solid var(--border-color);
+        border-radius: 2px;
+        cursor: pointer;
+        padding: 0;
+    }
+
+    .zbx-color-popover-footer {
+        margin-top: 8px;
+        display: flex;
+        justify-content: flex-end;
+    }
+
+    .zbx-color-popover-close {
+        height: 24px;
+        border: 1px solid var(--border-color);
+        border-radius: 2px;
+        background: var(--input-bg);
+        color: var(--text-color);
+        font-size: 11px;
+        font-weight: 700;
+        padding: 0 8px;
+        cursor: pointer;
     }
 
     .editor-range-fields {
