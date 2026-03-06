@@ -96,7 +96,29 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
             const typeRaw = (colonIdx >= 0 ? left.slice(0, colonIdx).trim() : 'value').toLowerCase();
             const type = MAPPING_TYPES.has(typeRaw) ? typeRaw : 'value';
             const condition = colonIdx >= 0 ? left.slice(colonIdx + 1).trim() : left;
-            const [text, color] = right.split('|');
+            const pipeIdx = right.indexOf('|');
+            let text = '';
+            let color = '';
+            const isHex = (value) => /^#[0-9A-Fa-f]{6}$/.test(String(value || '').trim());
+            if (pipeIdx >= 0) {
+                text = right.slice(0, pipeIdx).trim();
+                color = right.slice(pipeIdx + 1).trim();
+            }
+            else if (isHex(right)) {
+                // Legacy color-only form: "value:1=#2E7D32".
+                text = '';
+                color = right;
+            }
+            else {
+                text = right;
+                color = '';
+            }
+
+            // Legacy mixed forms where hex accidentally lives in text.
+            if (isHex(text) && (color === '' || isHex(color))) {
+                color = color === '' ? text : color;
+                text = '';
+            }
 
             return {
                 id: `m${idx}`,
@@ -135,7 +157,9 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
             if (condition === '') {
                 return '';
             }
-            const right = color ? `${text}|${color}` : text;
+            const right = color
+                ? (text === '' ? color : `${text}|${color}`)
+                : text;
             return `${type}:${condition}=${right}`;
         })
         .filter(Boolean)
@@ -1263,7 +1287,7 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                                                                         type="text"
                                                                         value={row.text}
                                                                         onChange={(e) => updateDatasetMapping(idx, mappingIdx, { text: e.target.value })}
-                                                                        placeholder="label"
+                                                                        placeholder="display text (optional)"
                                                                     />
                                                                     {ColorPickerField ? (
                                                                         <ColorPickerField
