@@ -271,8 +271,6 @@ window.ReactDashboardColorPickerField = ({
                         }}
                     />
 
-                    <div className="zbx-color-hue-preview" style={{ background: currentHex }} />
-
                     <div className="zbx-color-presets">
                         {presetColors.map((preset) => (
                             <button

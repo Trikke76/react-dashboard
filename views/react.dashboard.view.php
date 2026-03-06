@@ -663,13 +663,6 @@ $page->show();
         margin-top: 8px;
     }
 
-    .zbx-color-hue-preview {
-        margin-top: 6px;
-        height: 16px;
-        border-radius: 2px;
-        border: 1px solid var(--border-color);
-    }
-
     .zbx-color-presets {
         margin-top: 8px;
         display: grid;
