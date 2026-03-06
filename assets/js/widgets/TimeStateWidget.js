@@ -517,6 +517,12 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
         if (left === '' && right === '') {
             return '';
         }
+        if (right === '') {
+            return left;
+        }
+        if (left === '') {
+            return `..${right}`;
+        }
         return `${left}..${right}`;
     };
 
@@ -572,8 +578,9 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
         }
 
         const current = splitRangeCondition(row.condition);
-        const nextFrom = bound === 'from' ? value : current.from;
-        const nextTo = bound === 'to' ? value : current.to;
+        const normalizedValue = String(value || '').replace(/,/g, '.');
+        const nextFrom = bound === 'from' ? normalizedValue : current.from;
+        const nextTo = bound === 'to' ? normalizedValue : current.to;
         rows[mappingIdx] = {
             ...row,
             condition: buildRangeCondition(nextFrom, nextTo)
@@ -629,17 +636,24 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
             return;
         }
 
-        const activeDataset = datasets[safeActiveDatasetIdx];
-        if (!activeDataset) {
-            return;
-        }
+        const hostidsCsv = String(cfg.hostidsCsv || '').trim();
+        const timers = [];
 
-        const timer = setTimeout(() => {
-            fetchItemSuggestions(safeActiveDatasetIdx, activeDataset);
-        }, 250);
+        datasets.forEach((dataset, idx) => {
+            const filterValue = String((dataset && dataset.filter_value) || '').trim();
+            if (hostidsCsv === '' || filterValue === '') {
+                clearDatasetSuggestions(idx);
+                return;
+            }
 
-        return () => clearTimeout(timer);
-    }, [editMode, datasets, safeActiveDatasetIdx, fetchItemSuggestions]);
+            const timer = setTimeout(() => {
+                fetchItemSuggestions(idx, dataset);
+            }, 250);
+            timers.push(timer);
+        });
+
+        return () => timers.forEach((timer) => clearTimeout(timer));
+    }, [editMode, datasets, cfg.hostidsCsv, fetchItemSuggestions, clearDatasetSuggestions]);
 
     useEffect(() => {
         setItemSuggestionsByDataset((prev) => {
