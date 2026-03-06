@@ -343,6 +343,11 @@ window.ReactDashboardColorPickerField = ({
                                     className="rd-color-custom-input"
                                     value={customHex}
                                     onChange={(event) => setCustomHex(event.target.value)}
+                                    onBlur={() => {
+                                        if (isCustomValid) {
+                                            commitCustomHex();
+                                        }
+                                    }}
                                     onKeyDown={(event) => {
                                         if (event.key === 'Enter' && isCustomValid) {
                                             event.preventDefault();
@@ -353,14 +358,6 @@ window.ReactDashboardColorPickerField = ({
                                     spellCheck={false}
                                     autoComplete="off"
                                 />
-                                <button
-                                    type="button"
-                                    className="rd-color-custom-apply"
-                                    disabled={!isCustomValid}
-                                    onClick={commitCustomHex}
-                                >
-                                    Apply
-                                </button>
                             </div>
 
                             <div className="rd-color-section-label">Wheel</div>

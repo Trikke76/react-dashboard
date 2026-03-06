@@ -485,6 +485,24 @@ $page->show();
         gap: 8px;
     }
 
+    .editor-dataset-wrap {
+        display: grid;
+        grid-template-columns: 24px 1fr;
+        gap: 8px;
+        align-items: start;
+    }
+
+    .editor-dataset-side-toggle {
+        width: 24px;
+        min-width: 24px;
+        height: 24px;
+        padding: 0;
+        margin-top: 6px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
     .editor-dataset {
         border: 1px solid var(--border-color);
         border-radius: 3px;
@@ -497,7 +515,7 @@ $page->show();
 
     .editor-dataset-header {
         display: flex;
-        justify-content: space-between;
+        justify-content: flex-start;
         align-items: center;
         gap: 8px;
     }
@@ -586,7 +604,7 @@ $page->show();
 
     .editor-mapping-row {
         display: grid;
-        grid-template-columns: 92px 1fr 72px 30px;
+        grid-template-columns: 92px minmax(0, 1fr) minmax(0, 1fr) 72px 30px;
         gap: 6px;
         align-items: center;
     }
@@ -676,10 +694,7 @@ $page->show();
     }
 
     .rd-color-custom-top {
-        display: grid;
-        grid-template-columns: 1fr auto;
-        gap: 10px;
-        align-items: center;
+        display: block;
     }
 
     .rd-color-custom-input {
@@ -692,23 +707,6 @@ $page->show();
         padding: 0 8px;
         font-family: var(--font-mono);
         text-transform: uppercase;
-    }
-
-    .rd-color-custom-apply {
-        height: 36px;
-        border: 1px solid #2f7ef3;
-        border-radius: 10px;
-        background: rgba(33, 113, 230, 0.22);
-        color: #dbe9ff;
-        font-size: 12px;
-        font-weight: 700;
-        padding: 0 14px;
-        cursor: pointer;
-    }
-
-    .rd-color-custom-apply:disabled {
-        opacity: 0.45;
-        cursor: not-allowed;
     }
 
     .rd-color-section-label {

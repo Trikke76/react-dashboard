@@ -1117,98 +1117,51 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                                         const collapsedSummary = `${dataSet.filter_type === 'name' ? 'Item name' : 'Item key'}: ${String(dataSet.filter_value || '').trim() || 'No filter'} | rows ${dataSet.max_rows} | ${dataSet.lookback_hours}h`;
 
                                         return (
-                                            <div key={`dataset-${idx}`} className={`editor-dataset ${idx === safeActiveDatasetIdx ? 'is-active' : ''}`}>
-                                                <div className="editor-dataset-header">
-                                                    <div className="editor-dataset-title">
-                                                        <strong>Data source #{idx + 1}</strong>
-                                                        <button
-                                                            className="btn-zbx"
-                                                            type="button"
-                                                            onClick={() => {
-                                                                setActiveDatasetIdx(idx);
-                                                                setCollapsedDatasets((prev) => ({ ...prev, [idx]: false }));
-                                                            }}
-                                                        >
-                                                            Use
-                                                        </button>
-                                                        <button className="btn-zbx btn-danger" type="button" onClick={() => removeDataset(idx)} disabled={datasets.length <= 1}>✕</button>
+                                            <div key={`dataset-${idx}`} className="editor-dataset-wrap">
+                                                <button
+                                                    className="btn-zbx editor-dataset-side-toggle"
+                                                    type="button"
+                                                    onClick={() => toggleDatasetCollapsed(idx)}
+                                                    aria-label={isCollapsed ? `Expand data source ${idx + 1}` : `Collapse data source ${idx + 1}`}
+                                                >
+                                                    {isCollapsed ? '▸' : '▾'}
+                                                </button>
+
+                                                <div className={`editor-dataset ${idx === safeActiveDatasetIdx ? 'is-active' : ''}`}>
+                                                    <div className="editor-dataset-header">
+                                                        <div className="editor-dataset-title">
+                                                            <strong>Data source #{idx + 1}</strong>
+                                                            <button
+                                                                className="btn-zbx"
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setActiveDatasetIdx(idx);
+                                                                    setCollapsedDatasets((prev) => ({ ...prev, [idx]: false }));
+                                                                }}
+                                                            >
+                                                                Use
+                                                            </button>
+                                                            <button className="btn-zbx btn-danger" type="button" onClick={() => removeDataset(idx)} disabled={datasets.length <= 1}>✕</button>
+                                                        </div>
                                                     </div>
-                                                    <button className="btn-zbx" type="button" onClick={() => toggleDatasetCollapsed(idx)}>
-                                                        {isCollapsed ? 'Expand' : 'Collapse'}
-                                                    </button>
-                                                </div>
 
-                                                {isCollapsed && <div className="editor-subtle">{collapsedSummary}</div>}
+                                                    {isCollapsed && <div className="editor-subtle">{collapsedSummary}</div>}
 
-                                                {!isCollapsed && (
-                                                    <>
-                                                        <div className="editor-dataset-grid">
-                                                    <label>
-                                                        <span className="editor-subtle">Name</span>
-                                                        <input type="text" value={dataSet.name} onChange={(e) => updateDataset(idx, { name: e.target.value })} />
-                                                    </label>
+                                                    {!isCollapsed && (
+                                                        <>
+                                                            <div className="editor-dataset-grid">
+                                                                <label>
+                                                                    <span className="editor-subtle">Name</span>
+                                                                    <input type="text" value={dataSet.name} onChange={(e) => updateDataset(idx, { name: e.target.value })} />
+                                                                </label>
 
-                                                    <label>
-                                                        <span className="editor-subtle">Filter type</span>
-                                                        <select
-                                                            value={dataSet.filter_type}
-                                                            onChange={(e) => {
-                                                                clearDatasetSuggestions(idx);
-                                                                updateDataset(idx, { filter_type: e.target.value });
-                                                                setItemSuggestionSignatures((prev) => {
-                                                                    if (!(idx in prev)) {
-                                                                        return prev;
-                                                                    }
-                                                                    const next = { ...prev };
-                                                                    delete next[idx];
-                                                                    return next;
-                                                                });
-                                                            }}
-                                                        >
-                                                            <option value="key">Item key</option>
-                                                            <option value="name">Item name</option>
-                                                        </select>
-                                                    </label>
-
-                                                    <label>
-                                                        <span className="editor-subtle">Filter match</span>
-                                                        <select
-                                                            value={String(dataSet.filter_exact || '0') === '1' ? '1' : '0'}
-                                                            onChange={(e) => {
-                                                                updateDataset(idx, { filter_exact: e.target.value === '1' ? '1' : '0' });
-                                                                setItemSuggestionSignatures((prev) => {
-                                                                    if (!(idx in prev)) {
-                                                                        return prev;
-                                                                    }
-                                                                    const next = { ...prev };
-                                                                    delete next[idx];
-                                                                    return next;
-                                                                });
-                                                            }}
-                                                        >
-                                                            <option value="0">Pattern (*, ?)</option>
-                                                            <option value="1">Exact</option>
-                                                        </select>
-                                                    </label>
-
-                                                    <label className="is-full">
-                                                        <span className="editor-subtle">Filter value</span>
-                                                        {(() => {
-                                                            const datalistId = `timestate-filter-options-${widgetId || 'w'}-${idx}`;
-                                                            const suggestions = Array.isArray(itemSuggestionsByDataset[idx]) ? itemSuggestionsByDataset[idx] : [];
-
-                                                            return (
-                                                                <>
-                                                                    <input
-                                                                        type="text"
-                                                                        value={dataSet.filter_value}
-                                                                        list={datalistId}
-                                                                        placeholder={dataSet.filter_type === 'key' ? 'bv. zabbix[*' : 'bv. CPU'}
+                                                                <label>
+                                                                    <span className="editor-subtle">Filter type</span>
+                                                                    <select
+                                                                        value={dataSet.filter_type}
                                                                         onChange={(e) => {
-                                                                            if (String(e.target.value || '').trim() === '') {
-                                                                                clearDatasetSuggestions(idx);
-                                                                            }
-                                                                            updateDataset(idx, { filter_value: e.target.value });
+                                                                            clearDatasetSuggestions(idx);
+                                                                            updateDataset(idx, { filter_type: e.target.value });
                                                                             setItemSuggestionSignatures((prev) => {
                                                                                 if (!(idx in prev)) {
                                                                                     return prev;
@@ -1218,138 +1171,199 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                                                                                 return next;
                                                                             });
                                                                         }}
-                                                                    />
-                                                                    <datalist id={datalistId}>
-                                                                        {suggestions.map((value, optionIdx) => (
-                                                                            <option key={`${datalistId}-${optionIdx}`} value={value} />
-                                                                        ))}
-                                                                    </datalist>
-                                                                </>
-                                                            );
-                                                        })()}
-                                                    </label>
-
-                                                    <label>
-                                                        <span className="editor-subtle">Max rows</span>
-                                                        <input type="number" min="1" max={MAX_ROWS} value={dataSet.max_rows} onChange={(e) => updateDataset(idx, { max_rows: String(clampInt(Number(e.target.value) || 20, 1, MAX_ROWS)) })} />
-                                                    </label>
-
-                                                    <label>
-                                                        <span className="editor-subtle">Lookback (hours)</span>
-                                                        <input type="number" min="1" max={MAX_LOOKBACK_HOURS} value={dataSet.lookback_hours} onChange={(e) => updateDataset(idx, { lookback_hours: String(clampInt(Number(e.target.value) || 24, 1, MAX_LOOKBACK_HOURS)) })} />
-                                                    </label>
-
-                                                    <label>
-                                                        <span className="editor-subtle">History points / item</span>
-                                                        <input type="number" min="10" max={MAX_HISTORY_POINTS} value={dataSet.history_points} onChange={(e) => updateDataset(idx, { history_points: String(clampInt(Number(e.target.value) || 500, 10, MAX_HISTORY_POINTS)) })} />
-                                                    </label>
-
-                                                    <label>
-                                                        <span className="editor-subtle">Merge equal states</span>
-                                                        <select value={dataSet.merge_equal_states} onChange={(e) => updateDataset(idx, { merge_equal_states: e.target.value })}>
-                                                            <option value="1">Yes</option>
-                                                            <option value="0">No</option>
-                                                        </select>
-                                                    </label>
-
-                                                    <label>
-                                                        <span className="editor-subtle">Merge short (&lt; sec)</span>
-                                                        <input type="number" min="0" max="3600" value={dataSet.merge_shorter_than} onChange={(e) => updateDataset(idx, { merge_shorter_than: String(clampInt(Number(e.target.value) || 0, 0, 3600)) })} />
-                                                    </label>
-
-                                                    <label>
-                                                        <span className="editor-subtle">Null-gap mode</span>
-                                                        <select value={dataSet.null_gap_mode} onChange={(e) => updateDataset(idx, { null_gap_mode: e.target.value })}>
-                                                            <option value="0">Disconnected</option>
-                                                            <option value="1">Connected</option>
-                                                        </select>
-                                                    </label>
-
-                                                    <label>
-                                                        <span className="editor-subtle">Backfill from first</span>
-                                                        <select value={dataSet.null_gap_backfill_first} onChange={(e) => updateDataset(idx, { null_gap_backfill_first: e.target.value })}>
-                                                            <option value="0">No</option>
-                                                            <option value="1">Yes</option>
-                                                        </select>
-                                                    </label>
-                                                </div>
-
-                                                <div className="editor-subtle">Wildcards ondersteund: `*` en `?`.</div>
-
-                                                <div className="editor-picker-panel">
-                                                    <div className="editor-subtle"><strong>Value mappings</strong></div>
-                                                    <div className="editor-mapping-list">
-                                                        {dataSetMappings.map((row, mappingIdx) => (
-                                                            <div key={`${idx}-${row.id}-${mappingIdx}`}>
-                                                                <div className="editor-mapping-row">
-                                                                    <select value={row.type} onChange={(e) => handleMappingTypeChange(idx, mappingIdx, e.target.value)}>
-                                                                        <option value="value">value</option>
-                                                                        <option value="range">range</option>
-                                                                        <option value="regex">regex</option>
-                                                                        <option value="special">special</option>
+                                                                    >
+                                                                        <option value="key">Item key</option>
+                                                                        <option value="name">Item name</option>
                                                                     </select>
-                                                                    {row.type === 'range' ? (
-                                                                        (() => {
-                                                                            const bounds = splitRangeCondition(row.condition);
-                                                                            return (
-                                                                                <div className="editor-range-fields">
-                                                                                    <input
-                                                                                        type="text"
-                                                                                        value={bounds.from}
-                                                                                        onChange={(e) => handleRangeConditionChange(idx, mappingIdx, 'from', e.target.value)}
-                                                                                        placeholder="from"
-                                                                                    />
-                                                                                    <input
-                                                                                        type="text"
-                                                                                        value={bounds.to}
-                                                                                        onChange={(e) => handleRangeConditionChange(idx, mappingIdx, 'to', e.target.value)}
-                                                                                        placeholder="to"
-                                                                                    />
-                                                                                </div>
-                                                                            );
-                                                                        })()
-                                                                    ) : row.type === 'special' ? (
-                                                                        <select
-                                                                            value={normalizeMappingCondition('special', row.condition)}
-                                                                            onChange={(e) => updateDatasetMapping(idx, mappingIdx, { condition: e.target.value })}
-                                                                        >
-                                                                            <option value="null">null</option>
-                                                                            <option value="empty">empty</option>
-                                                                            <option value="nan">nan</option>
-                                                                            <option value="true">true</option>
-                                                                            <option value="false">false</option>
-                                                                            <option value="unknown">unknown</option>
-                                                                        </select>
-                                                                    ) : (
-                                                                        <input
-                                                                            type="text"
-                                                                            value={row.condition}
-                                                                            onChange={(e) => updateDatasetMapping(idx, mappingIdx, { condition: e.target.value })}
-                                                                            placeholder={mappingConditionPlaceholder(row.type)}
-                                                                        />
-                                                                    )}
-                                                                    {ColorPickerField ? (
-                                                                        <ColorPickerField
-                                                                            value={row.color || '#607D8B'}
-                                                                            defaultColor="#607D8B"
-                                                                            onChange={(nextColor) => updateDatasetMapping(idx, mappingIdx, { color: nextColor })}
-                                                                        />
-                                                                    ) : (
-                                                                        <span className="editor-subtle">Color picker unavailable</span>
-                                                                    )}
-                                                                    <button className="btn-zbx btn-danger" type="button" onClick={() => removeDatasetMapping(idx, mappingIdx)}>✕</button>
-                                                                </div>
-                                                                <div className="editor-subtle">{mappingConditionHint(row.type)}</div>
-                                                            </div>
-                                                        ))}
+                                                                </label>
 
-                                                        <div className="editor-inline-actions">
-                                                            <button className="btn-zbx" type="button" onClick={() => addDatasetMapping(idx)}>Add mapping</button>
-                                                        </div>
-                                                    </div>
-                                                        </div>
-                                                    </>
-                                                )}
+                                                                <label>
+                                                                    <span className="editor-subtle">Filter match</span>
+                                                                    <select
+                                                                        value={String(dataSet.filter_exact || '0') === '1' ? '1' : '0'}
+                                                                        onChange={(e) => {
+                                                                            updateDataset(idx, { filter_exact: e.target.value === '1' ? '1' : '0' });
+                                                                            setItemSuggestionSignatures((prev) => {
+                                                                                if (!(idx in prev)) {
+                                                                                    return prev;
+                                                                                }
+                                                                                const next = { ...prev };
+                                                                                delete next[idx];
+                                                                                return next;
+                                                                            });
+                                                                        }}
+                                                                    >
+                                                                        <option value="0">Pattern (*, ?)</option>
+                                                                        <option value="1">Exact</option>
+                                                                    </select>
+                                                                </label>
+
+                                                                <label className="is-full">
+                                                                    <span className="editor-subtle">Filter value</span>
+                                                                    {(() => {
+                                                                        const datalistId = `timestate-filter-options-${widgetId || 'w'}-${idx}`;
+                                                                        const suggestions = Array.isArray(itemSuggestionsByDataset[idx]) ? itemSuggestionsByDataset[idx] : [];
+
+                                                                        return (
+                                                                            <>
+                                                                                <input
+                                                                                    type="text"
+                                                                                    value={dataSet.filter_value}
+                                                                                    list={datalistId}
+                                                                                    placeholder={dataSet.filter_type === 'key' ? 'bv. zabbix[*' : 'bv. CPU'}
+                                                                                    onChange={(e) => {
+                                                                                        if (String(e.target.value || '').trim() === '') {
+                                                                                            clearDatasetSuggestions(idx);
+                                                                                        }
+                                                                                        updateDataset(idx, { filter_value: e.target.value });
+                                                                                        setItemSuggestionSignatures((prev) => {
+                                                                                            if (!(idx in prev)) {
+                                                                                                return prev;
+                                                                                            }
+                                                                                            const next = { ...prev };
+                                                                                            delete next[idx];
+                                                                                            return next;
+                                                                                        });
+                                                                                    }}
+                                                                                />
+                                                                                <datalist id={datalistId}>
+                                                                                    {suggestions.map((value, optionIdx) => (
+                                                                                        <option key={`${datalistId}-${optionIdx}`} value={value} />
+                                                                                    ))}
+                                                                                </datalist>
+                                                                            </>
+                                                                        );
+                                                                    })()}
+                                                                </label>
+
+                                                                <label>
+                                                                    <span className="editor-subtle">Max rows</span>
+                                                                    <input type="number" min="1" max={MAX_ROWS} value={dataSet.max_rows} onChange={(e) => updateDataset(idx, { max_rows: String(clampInt(Number(e.target.value) || 20, 1, MAX_ROWS)) })} />
+                                                                </label>
+
+                                                                <label>
+                                                                    <span className="editor-subtle">Lookback (hours)</span>
+                                                                    <input type="number" min="1" max={MAX_LOOKBACK_HOURS} value={dataSet.lookback_hours} onChange={(e) => updateDataset(idx, { lookback_hours: String(clampInt(Number(e.target.value) || 24, 1, MAX_LOOKBACK_HOURS)) })} />
+                                                                </label>
+
+                                                                <label>
+                                                                    <span className="editor-subtle">History points / item</span>
+                                                                    <input type="number" min="10" max={MAX_HISTORY_POINTS} value={dataSet.history_points} onChange={(e) => updateDataset(idx, { history_points: String(clampInt(Number(e.target.value) || 500, 10, MAX_HISTORY_POINTS)) })} />
+                                                                </label>
+
+                                                                <label>
+                                                                    <span className="editor-subtle">Merge equal states</span>
+                                                                    <select value={dataSet.merge_equal_states} onChange={(e) => updateDataset(idx, { merge_equal_states: e.target.value })}>
+                                                                        <option value="1">Yes</option>
+                                                                        <option value="0">No</option>
+                                                                    </select>
+                                                                </label>
+
+                                                                <label>
+                                                                    <span className="editor-subtle">Merge short (&lt; sec)</span>
+                                                                    <input type="number" min="0" max="3600" value={dataSet.merge_shorter_than} onChange={(e) => updateDataset(idx, { merge_shorter_than: String(clampInt(Number(e.target.value) || 0, 0, 3600)) })} />
+                                                                </label>
+
+                                                                <label>
+                                                                    <span className="editor-subtle">Null-gap mode</span>
+                                                                    <select value={dataSet.null_gap_mode} onChange={(e) => updateDataset(idx, { null_gap_mode: e.target.value })}>
+                                                                        <option value="0">Disconnected</option>
+                                                                        <option value="1">Connected</option>
+                                                                    </select>
+                                                                </label>
+
+                                                                <label>
+                                                                    <span className="editor-subtle">Backfill from first</span>
+                                                                    <select value={dataSet.null_gap_backfill_first} onChange={(e) => updateDataset(idx, { null_gap_backfill_first: e.target.value })}>
+                                                                        <option value="0">No</option>
+                                                                        <option value="1">Yes</option>
+                                                                    </select>
+                                                                </label>
+                                                            </div>
+
+                                                            <div className="editor-subtle">Wildcards ondersteund: `*` en `?`.</div>
+
+                                                            <div className="editor-picker-panel">
+                                                                <div className="editor-subtle"><strong>Value mappings</strong></div>
+                                                                <div className="editor-mapping-list">
+                                                                    {dataSetMappings.map((row, mappingIdx) => (
+                                                                        <div key={`${idx}-${row.id}-${mappingIdx}`}>
+                                                                            <div className="editor-mapping-row">
+                                                                                <select value={row.type} onChange={(e) => handleMappingTypeChange(idx, mappingIdx, e.target.value)}>
+                                                                                    <option value="value">value</option>
+                                                                                    <option value="range">range</option>
+                                                                                    <option value="regex">regex</option>
+                                                                                    <option value="special">special</option>
+                                                                                </select>
+                                                                                {row.type === 'range' ? (
+                                                                                    (() => {
+                                                                                        const bounds = splitRangeCondition(row.condition);
+                                                                                        return (
+                                                                                            <div className="editor-range-fields">
+                                                                                                <input
+                                                                                                    type="text"
+                                                                                                    value={bounds.from}
+                                                                                                    onChange={(e) => handleRangeConditionChange(idx, mappingIdx, 'from', e.target.value)}
+                                                                                                    placeholder="from"
+                                                                                                />
+                                                                                                <input
+                                                                                                    type="text"
+                                                                                                    value={bounds.to}
+                                                                                                    onChange={(e) => handleRangeConditionChange(idx, mappingIdx, 'to', e.target.value)}
+                                                                                                    placeholder="to"
+                                                                                                />
+                                                                                            </div>
+                                                                                        );
+                                                                                    })()
+                                                                                ) : row.type === 'special' ? (
+                                                                                    <select
+                                                                                        value={normalizeMappingCondition('special', row.condition)}
+                                                                                        onChange={(e) => updateDatasetMapping(idx, mappingIdx, { condition: e.target.value })}
+                                                                                    >
+                                                                                        <option value="null">null</option>
+                                                                                        <option value="empty">empty</option>
+                                                                                        <option value="nan">nan</option>
+                                                                                        <option value="true">true</option>
+                                                                                        <option value="false">false</option>
+                                                                                        <option value="unknown">unknown</option>
+                                                                                    </select>
+                                                                                ) : (
+                                                                                    <input
+                                                                                        type="text"
+                                                                                        value={row.condition}
+                                                                                        onChange={(e) => updateDatasetMapping(idx, mappingIdx, { condition: e.target.value })}
+                                                                                        placeholder={mappingConditionPlaceholder(row.type)}
+                                                                                    />
+                                                                                )}
+                                                                                <input
+                                                                                    type="text"
+                                                                                    value={row.text || ''}
+                                                                                    onChange={(e) => updateDatasetMapping(idx, mappingIdx, { text: e.target.value })}
+                                                                                    placeholder="Display text"
+                                                                                />
+                                                                                {ColorPickerField ? (
+                                                                                    <ColorPickerField
+                                                                                        value={row.color || '#607D8B'}
+                                                                                        defaultColor="#607D8B"
+                                                                                        onChange={(nextColor) => updateDatasetMapping(idx, mappingIdx, { color: nextColor })}
+                                                                                    />
+                                                                                ) : (
+                                                                                    <span className="editor-subtle">Color picker unavailable</span>
+                                                                                )}
+                                                                                <button className="btn-zbx btn-danger" type="button" onClick={() => removeDatasetMapping(idx, mappingIdx)}>✕</button>
+                                                                            </div>
+                                                                            <div className="editor-subtle">{mappingConditionHint(row.type)}</div>
+                                                                        </div>
+                                                                    ))}
+
+                                                                    <div className="editor-inline-actions">
+                                                                        <button className="btn-zbx" type="button" onClick={() => addDatasetMapping(idx)}>Add mapping</button>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </>
+                                                    )}
+                                                </div>
                                             </div>
                                         );
                                     })}
