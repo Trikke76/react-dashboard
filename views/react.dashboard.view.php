@@ -603,6 +603,11 @@ $page->show();
         padding: 2px;
     }
 
+    /* Hide any legacy hex text input if an older picker implementation is present. */
+    .editor-mapping-row .zbx-color-text {
+        display: none !important;
+    }
+
     .editor-range-fields {
         display: grid;
         grid-template-columns: 1fr 1fr;

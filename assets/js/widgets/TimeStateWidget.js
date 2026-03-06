@@ -1,47 +1,6 @@
 window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClient, globalData }) => {
     const { useState, useEffect, useMemo, useCallback } = React;
-    const createLocalColorPickerField = () => ({ value, onChange, defaultColor = '#607D8B' }) => {
-        const normalizeColor = (raw, fallback = '#607D8B') => {
-            const trimmed = String(raw || '').trim().toUpperCase();
-            if (/^#[0-9A-F]{6}$/.test(trimmed)) {
-                return trimmed;
-            }
-
-            const compact = trimmed.replace(/^#/, '');
-            if (/^[0-9A-F]{3}$/.test(compact)) {
-                return `#${compact.split('').map((char) => `${char}${char}`).join('')}`;
-            }
-
-            return String(fallback || '#607D8B').toUpperCase();
-        };
-
-        const normalizedDefault = useMemo(() => normalizeColor(defaultColor, '#607D8B'), [defaultColor]);
-        const normalizedValue = useMemo(() => normalizeColor(value, normalizedDefault), [value, normalizedDefault]);
-
-        const commitColor = (raw) => {
-            const next = normalizeColor(raw, normalizedDefault);
-            if (typeof onChange === 'function') {
-                onChange(next);
-            }
-        };
-
-        return (
-            <div className="zbx-color-picker">
-                <span className="zbx-color-preview" style={{ background: normalizedValue }} />
-                <input
-                    className="zbx-color-native"
-                    type="color"
-                    value={normalizedValue}
-                    onChange={(event) => commitColor(event.target.value)}
-                />
-            </div>
-        );
-    };
-
-    const ColorPickerField = window.ColorPickerField || createLocalColorPickerField();
-    if (!window.ColorPickerField) {
-        window.ColorPickerField = ColorPickerField;
-    }
+    const ColorPickerField = window.ReactDashboardColorPickerField;
 
     const DEFAULT_STATE_MAP = 'value:1=OK|#2E7D32,value:0=Problem|#C62828';
     const MAX_DATASETS = 10;
@@ -1306,11 +1265,15 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                                                                         onChange={(e) => updateDatasetMapping(idx, mappingIdx, { text: e.target.value })}
                                                                         placeholder="label"
                                                                     />
-                                                                    <ColorPickerField
-                                                                        value={row.color || '#607D8B'}
-                                                                        defaultColor="#607D8B"
-                                                                        onChange={(nextColor) => updateDatasetMapping(idx, mappingIdx, { color: nextColor })}
-                                                                    />
+                                                                    {ColorPickerField ? (
+                                                                        <ColorPickerField
+                                                                            value={row.color || '#607D8B'}
+                                                                            defaultColor="#607D8B"
+                                                                            onChange={(nextColor) => updateDatasetMapping(idx, mappingIdx, { color: nextColor })}
+                                                                        />
+                                                                    ) : (
+                                                                        <span className="editor-subtle">Color picker unavailable</span>
+                                                                    )}
                                                                     <button className="btn-zbx btn-danger" type="button" onClick={() => removeDatasetMapping(idx, mappingIdx)}>✕</button>
                                                                 </div>
                                                                 <div className="editor-subtle">{mappingConditionHint(row.type)}</div>

@@ -1,4 +1,4 @@
-window.ColorPickerField = ({
+window.ReactDashboardColorPickerField = ({
     value,
     onChange,
     defaultColor = '#607D8B'
