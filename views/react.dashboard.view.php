@@ -1272,6 +1272,7 @@ if (is_file($timestate_widget_file)) {
         showTime: true,
         showTimezone: false,
         background: 'theme',
+        backgroundColor: '#1F252B',
         timeBold: false,
         showSeconds: true,
         hourFormat: '24',
@@ -1302,10 +1303,12 @@ if (is_file($timestate_widget_file)) {
 
     const ClockWidget = ({ remove, settings, updateSettings, widgetId }) => {
         const cfg = { ...DEFAULT_WIDGET, ...settings };
+        const ColorPickerField = window.ReactDashboardColorPickerField;
         const [editMode, setEditMode] = useState(false);
         const [now, setNow] = useState(new Date());
         const bodyRef = useRef(null);
         const [bodySize, setBodySize] = useState({ width: 320, height: 220 });
+        const [dateSizeDraft, setDateSizeDraft] = useState(String(cfg.dateSize));
 
         const refreshMs = useMemo(() => {
             const found = REFRESH_OPTIONS.find((o) => o.value === cfg.refreshInterval);
@@ -1341,6 +1344,10 @@ if (is_file($timestate_widget_file)) {
             observer.observe(element);
             return () => observer.disconnect();
         }, []);
+
+        useEffect(() => {
+            setDateSizeDraft(String(cfg.dateSize));
+        }, [cfg.dateSize, editMode]);
 
         const timezone = cfg.timeType === 'local'
             ? Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -1398,13 +1405,36 @@ if (is_file($timestate_widget_file)) {
             updateSettings({ [key]: checked });
         };
 
+        const commitDateSizeDraft = () => {
+            const raw = String(dateSizeDraft || '').trim();
+            if (raw === '') {
+                setDateSizeDraft(String(cfg.dateSize));
+                return;
+            }
+
+            const parsed = Number(raw);
+            if (!Number.isFinite(parsed)) {
+                setDateSizeDraft(String(cfg.dateSize));
+                return;
+            }
+
+            const next = Math.round(clamp(parsed, 60, 220));
+            setDateSizeDraft(String(next));
+            if (next !== Number(cfg.dateSize)) {
+                updateSettings({ dateSize: next });
+            }
+        };
+
         const faceStyle = { '--clock-size': `${analogSize}px` };
+        const resolvedBackground = cfg.background === 'dark'
+            ? '#1f252b'
+            : (cfg.background === 'custom' ? String(cfg.backgroundColor || '#1F252B') : 'transparent');
         const viewStyle = {
             '--clock-time-size': `${digitalTimeSize}px`,
             '--clock-date-size': `${dateSize}px`,
             '--clock-time-weight': cfg.timeBold ? 700 : 500,
-            '--clock-time-color': cfg.background === 'dark' ? '#f5f8fb' : 'var(--text-color)',
-            background: cfg.background === 'dark' ? '#1f252b' : 'transparent'
+            '--clock-time-color': cfg.background === 'theme' ? 'var(--text-color)' : '#f5f8fb',
+            background: resolvedBackground
         };
 
         const renderAnalog = () => (
@@ -1555,8 +1585,31 @@ if (is_file($timestate_widget_file)) {
                                         <div className="editor-segment">
                                             <button className={cfg.background === 'theme' ? 'active' : ''} onClick={() => updateSettings({ background: 'theme' })}>Theme</button>
                                             <button className={cfg.background === 'dark' ? 'active' : ''} onClick={() => updateSettings({ background: 'dark' })}>Dark</button>
+                                            <button className={cfg.background === 'custom' ? 'active' : ''} onClick={() => updateSettings({ background: 'custom' })}>Custom</button>
                                         </div>
                                     </div>
+
+                                    {cfg.background === 'custom' && (
+                                        <>
+                                            <div className="editor-label">Custom bg colour</div>
+                                            <div className="editor-control">
+                                                {ColorPickerField ? (
+                                                    <ColorPickerField
+                                                        value={cfg.backgroundColor || '#1F252B'}
+                                                        defaultColor="#1F252B"
+                                                        onChange={(nextColor) => updateSettings({ backgroundColor: nextColor })}
+                                                    />
+                                                ) : (
+                                                    <input
+                                                        type="text"
+                                                        value={cfg.backgroundColor || '#1F252B'}
+                                                        onChange={(e) => updateSettings({ backgroundColor: e.target.value })}
+                                                        placeholder="#1F252B"
+                                                    />
+                                                )}
+                                            </div>
+                                        </>
+                                    )}
 
                                     <div className="editor-label">Time style</div>
                                     <div className="editor-control editor-checks">
@@ -1568,13 +1621,17 @@ if (is_file($timestate_widget_file)) {
                                         </label>
                                     </div>
 
-                                    <div className="editor-label">Time format</div>
-                                    <div className="editor-control">
-                                        <div className="editor-segment">
-                                            <button className={cfg.hourFormat === '24' ? 'active' : ''} onClick={() => updateSettings({ hourFormat: '24' })}>24-hour</button>
-                                            <button className={cfg.hourFormat === '12' ? 'active' : ''} onClick={() => updateSettings({ hourFormat: '12' })}>12-hour</button>
-                                        </div>
-                                    </div>
+                                    {cfg.clockType === 'digital' && (
+                                        <>
+                                            <div className="editor-label">Time format</div>
+                                            <div className="editor-control">
+                                                <div className="editor-segment">
+                                                    <button className={cfg.hourFormat === '24' ? 'active' : ''} onClick={() => updateSettings({ hourFormat: '24' })}>24-hour</button>
+                                                    <button className={cfg.hourFormat === '12' ? 'active' : ''} onClick={() => updateSettings({ hourFormat: '12' })}>12-hour</button>
+                                                </div>
+                                            </div>
+                                        </>
+                                    )}
 
                                     <div className="editor-label">Date size (%)</div>
                                     <div className="editor-control">
@@ -1582,8 +1639,15 @@ if (is_file($timestate_widget_file)) {
                                             type="number"
                                             min="60"
                                             max="220"
-                                            value={cfg.dateSize}
-                                            onChange={(e) => updateSettings({ dateSize: clamp(Number(e.target.value) || 100, 60, 220) })}
+                                            value={dateSizeDraft}
+                                            onChange={(e) => setDateSizeDraft(e.target.value)}
+                                            onBlur={commitDateSizeDraft}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    e.preventDefault();
+                                                    commitDateSizeDraft();
+                                                }
+                                            }}
                                         />
                                     </div>
                                 </div>
@@ -1645,6 +1709,13 @@ if (is_file($timestate_widget_file)) {
             return fallback;
         }
         return value.slice(0, maxLength);
+    };
+    const toHexColor = (value, fallback) => {
+        const raw = String(value || '').trim();
+        if (/^#[0-9A-Fa-f]{6}$/.test(raw)) {
+            return raw.toUpperCase();
+        }
+        return fallback;
     };
     const toId = (value, fallback = '') => (/^\d+$/.test(String(value || '').trim()) ? String(value).trim() : fallback);
     const toIdsCsv = (value) => Array.from(new Set(
@@ -1725,7 +1796,8 @@ if (is_file($timestate_widget_file)) {
         safe.showDate = toBoolean(base.showDate, DEFAULT_WIDGET.showDate);
         safe.showTime = toBoolean(base.showTime, DEFAULT_WIDGET.showTime);
         safe.showTimezone = toBoolean(base.showTimezone, DEFAULT_WIDGET.showTimezone);
-        safe.background = base.background === 'dark' ? 'dark' : 'theme';
+        safe.background = ['theme', 'dark', 'custom'].includes(base.background) ? base.background : DEFAULT_WIDGET.background;
+        safe.backgroundColor = toHexColor(base.backgroundColor, DEFAULT_WIDGET.backgroundColor);
         safe.timeBold = toBoolean(base.timeBold, DEFAULT_WIDGET.timeBold);
         safe.showSeconds = toBoolean(base.showSeconds, DEFAULT_WIDGET.showSeconds);
         safe.hourFormat = base.hourFormat === '12' ? '12' : '24';
