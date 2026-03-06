@@ -722,7 +722,8 @@ $module_base = rtrim(dirname($_SERVER['SCRIPT_NAME']), '/');
 $zabbix_config = [
     'module_base' => $module_base,
     'api_url' => $module_base . '/zabbix.php?action=react.dashboard',
-    'api_fallback_url' => $module_base . '/zabbix.php?action=react.dashboard'
+    'api_fallback_url' => $module_base . '/zabbix.php?action=react.dashboard',
+    'csrf_token' => CCsrfTokenHelper::get('react.dashboard')
 ];
 ?>
 <script>
@@ -768,20 +769,34 @@ if (is_file($timestate_widget_file)) {
 
         const requestJson = async (paramsInput) => {
             const params = toParams(paramsInput);
+            const csrfToken = String((config && config.csrf_token) || '');
             let lastError = null;
 
             for (const base of candidates) {
-                const separator = String(base).includes('?') ? '&' : '?';
-                const url = `${base}${separator}${params.toString()}`;
+                const url = String(base).replace(/\?.*$/, '');
+                const body = new URLSearchParams(params);
+                body.set('action', 'react.dashboard');
+                if (csrfToken) {
+                    body.set('_csrf_token', csrfToken);
+                }
+
                 try {
-                    const response = await fetch(url, { headers: { Accept: 'application/json' } });
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                            'X-Requested-With': 'XMLHttpRequest',
+                            Accept: 'application/json'
+                        },
+                        body: body.toString()
+                    });
                     const text = await response.text();
                     let payload = null;
                     try {
                         payload = JSON.parse(text);
                     }
                     catch (_parseError) {
-                        throw new Error(`API response is geen JSON (${base}). Eerste bytes: ${text.slice(0, 80)}`);
+                        throw new Error(`API response is geen JSON. Eerste bytes: ${text.slice(0, 80)}`);
                     }
 
                     if (!response.ok) {
