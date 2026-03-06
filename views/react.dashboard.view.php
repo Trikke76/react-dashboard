@@ -578,19 +578,89 @@ $page->show();
         overflow: hidden;
     }
 
+    .timestate-gridline {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        width: 1px;
+        background: rgba(255, 255, 255, 0.14);
+        pointer-events: none;
+        z-index: 1;
+    }
+
     .timestate-segment {
         position: absolute;
         top: 0;
         bottom: 0;
         border-right: 1px solid rgba(0, 0, 0, 0.2);
+        z-index: 2;
     }
 
     .timestate-axis {
-        display: flex;
-        justify-content: space-between;
+        position: relative;
+        height: 18px;
         color: var(--subtle-text);
         font-size: 11px;
         font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .timestate-axis-tick {
+        position: absolute;
+        top: 0;
+        transform: translateX(-50%);
+        white-space: nowrap;
+    }
+
+    .timestate-axis-tick:first-child {
+        transform: none;
+        left: 0 !important;
+    }
+
+    .timestate-axis-tick:last-child {
+        transform: translateX(-100%);
+        left: 100% !important;
+    }
+
+    .timestate-legend {
+        border-top: 1px solid var(--border-color);
+        padding-top: 6px;
+    }
+
+    .timestate-legend-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 12px;
+    }
+
+    .timestate-legend-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        color: var(--subtle-text);
+    }
+
+    .timestate-legend-swatch {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 2px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        margin-right: 4px;
+    }
+
+    .timestate-legend--table table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 11px;
+        color: var(--subtle-text);
+    }
+
+    .timestate-legend--table th,
+    .timestate-legend--table td {
+        text-align: left;
+        padding: 4px 6px;
+        border-bottom: 1px solid var(--border-color);
     }
 
     .timestate-empty,
@@ -1082,6 +1152,10 @@ if (is_file($timestate_widget_file)) {
         rowGroupMode: 0,
         rowGroupCollapsed: 0,
         refreshSec: 30,
+        timeAxisTickSec: 0,
+        timeAxisLabelDensity: 2,
+        showGridLines: true,
+        legendMode: 'list',
         datasetsJson: '',
         stateMap: 'value:1=OK|#2E7D32,value:0=Problem|#C62828'
     };
@@ -1167,6 +1241,10 @@ if (is_file($timestate_widget_file)) {
             safe.rowGroupMode = toBoundedInt(base.rowGroupMode, 0, 0, 2);
             safe.rowGroupCollapsed = toBoundedInt(base.rowGroupCollapsed, 0, 0, 1);
             safe.refreshSec = toBoundedInt(base.refreshSec, 30, 5, 3600);
+            safe.timeAxisTickSec = toBoundedInt(base.timeAxisTickSec, 0, 0, 86400);
+            safe.timeAxisLabelDensity = toBoundedInt(base.timeAxisLabelDensity, 2, 1, 3);
+            safe.showGridLines = toBoolean(base.showGridLines, true);
+            safe.legendMode = ['none', 'list', 'table'].includes(base.legendMode) ? base.legendMode : 'list';
             safe.stateMap = toText(base.stateMap, TIMESTATE_DEFAULT_WIDGET.stateMap, 2048);
             safe.datasetsJson = sanitizeDatasetsJson(base.datasetsJson);
             return safe;

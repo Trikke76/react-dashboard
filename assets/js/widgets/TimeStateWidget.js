@@ -45,6 +45,10 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
         nullGapMode: 0,
         nullGapBackfillFirst: 0,
         refreshSec: 30,
+        timeAxisTickSec: 0,
+        timeAxisLabelDensity: 2,
+        showGridLines: true,
+        legendMode: 'list',
         stateMap: DEFAULT_STATE_MAP,
         datasetsJson: ''
     };
@@ -598,8 +602,7 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
         const hostidsCsv = String(cfg.hostidsCsv || '');
         const filterMode = String(dataset && dataset.filter_type ? dataset.filter_type : 'key') === 'name' ? 'name' : 'key';
         const filterValue = String(dataset && dataset.filter_value ? dataset.filter_value : '').trim();
-        const filterExact = String(dataset && dataset.filter_exact ? dataset.filter_exact : '0') === '1' ? '1' : '0';
-        const signature = [hostidsCsv, filterMode, filterValue, filterExact].join('|');
+        const signature = [hostidsCsv, filterMode, filterValue].join('|');
 
         if (hostidsCsv === '' || filterValue === '') {
             clearDatasetSuggestions(datasetIdx);
@@ -615,7 +618,7 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                 hostids_csv: hostidsCsv,
                 filter_mode: filterMode,
                 item_filter: filterValue,
-                filter_exact: filterExact,
+                filter_exact: '0',
                 max_rows: '40'
             }, 10000);
             const items = Array.isArray(payload && payload.items) ? payload.items : [];
@@ -702,6 +705,66 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
     const timeFrom = Number(model.time_from || 0);
     const timeTo = Number(model.time_to || 0);
     const range = Math.max(1, timeTo - timeFrom);
+    const labelDensity = Math.max(1, Math.min(3, Number(cfg.timeAxisLabelDensity) || 2));
+    const showGridLines = cfg.showGridLines !== false;
+    const legendMode = ['none', 'list', 'table'].includes(String(cfg.legendMode || 'list')) ? String(cfg.legendMode || 'list') : 'list';
+
+    const chooseAutoTickInterval = (rangeSeconds) => {
+        const steps = [60, 300, 900, 1800, 3600, 7200, 10800, 21600, 43200, 86400, 172800, 604800];
+        const targetTicks = 8;
+        const target = Math.max(1, Math.round(rangeSeconds / targetTicks));
+        for (let i = 0; i < steps.length; i += 1) {
+            if (steps[i] >= target) {
+                return steps[i];
+            }
+        }
+        return steps[steps.length - 1];
+    };
+
+    const axisTickSec = useMemo(() => {
+        const configured = Number(cfg.timeAxisTickSec) || 0;
+        if (configured > 0) {
+            return configured;
+        }
+        return chooseAutoTickInterval(range);
+    }, [cfg.timeAxisTickSec, range]);
+
+    const axisPoints = useMemo(() => {
+        if (timeTo <= timeFrom || axisTickSec <= 0) {
+            return [timeFrom, timeTo];
+        }
+
+        const points = [timeFrom];
+        const firstTick = Math.ceil(timeFrom / axisTickSec) * axisTickSec;
+        for (let tick = firstTick; tick < timeTo; tick += axisTickSec) {
+            if (tick > timeFrom) {
+                points.push(tick);
+            }
+            if (points.length > 300) {
+                break;
+            }
+        }
+        points.push(timeTo);
+
+        return Array.from(new Set(points)).sort((a, b) => a - b);
+    }, [timeFrom, timeTo, axisTickSec]);
+
+    const legendEntries = useMemo(() => {
+        const map = new Map();
+        (model.rows || []).forEach((row) => {
+            (row.segments || []).forEach((segment) => {
+                const label = String(segment.label || segment.state || 'State');
+                const color = String(segment.color || '#607D8B');
+                const key = `${label}|${color}`;
+                const duration = Math.max(0, Number(segment.t_to || 0) - Number(segment.t_from || 0));
+                const current = map.get(key) || { label, color, count: 0, duration: 0 };
+                current.count += 1;
+                current.duration += duration;
+                map.set(key, current);
+            });
+        });
+        return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label));
+    }, [model.rows]);
 
     const fmtDateTime = (ts) => {
         if (!ts) {
@@ -710,12 +773,51 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
         return new Date(ts * 1000).toLocaleString();
     };
 
+    const fmtAxisTick = (ts) => {
+        if (!ts) {
+            return '-';
+        }
+        const date = new Date(ts * 1000);
+        if (range <= (6 * 3600)) {
+            return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        }
+        if (range <= (48 * 3600)) {
+            return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+        return date.toLocaleString([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+    };
+
+    const fmtDuration = (seconds) => {
+        const total = Math.max(0, Number(seconds) || 0);
+        if (total >= 3600) {
+            return `${(total / 3600).toFixed(1)}h`;
+        }
+        if (total >= 60) {
+            return `${Math.round(total / 60)}m`;
+        }
+        return `${Math.round(total)}s`;
+    };
+
     const renderRow = (row, rowIndex) => (
         <div className="timestate-row" key={`${widgetId || 'row'}-${rowIndex}`}>
             <div className="timestate-label" title={row.row_label || ''}>
                 {row.row_label || 'Row'}
             </div>
             <div className="timestate-lane">
+                {showGridLines && axisPoints.map((tick, idx) => {
+                    if (tick <= timeFrom || tick >= timeTo) {
+                        return null;
+                    }
+                    const left = ((tick - timeFrom) / range) * 100;
+                    return (
+                        <span
+                            key={`grid-${rowIndex}-${idx}`}
+                            className="timestate-gridline"
+                            style={{ left: `${Math.max(0, Math.min(100, left))}%` }}
+                        />
+                    );
+                })}
+
                 {(row.segments || []).map((segment, segIndex) => {
                     const from = Number(segment.t_from || 0);
                     const to = Number(segment.t_to || 0);
@@ -799,9 +901,58 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                 </div>
 
                 <div className="timestate-axis">
-                    <span>{fmtDateTime(timeFrom)}</span>
-                    <span>{fmtDateTime(timeTo)}</span>
+                    {axisPoints.map((tick, idx) => {
+                        const left = ((tick - timeFrom) / range) * 100;
+                        const step = labelDensity === 1 ? 4 : (labelDensity === 2 ? 2 : 1);
+                        const showLabel = idx === 0 || idx === (axisPoints.length - 1) || (idx % step) === 0;
+                        return (
+                            <span
+                                key={`axis-${tick}-${idx}`}
+                                className="timestate-axis-tick"
+                                style={{ left: `${Math.max(0, Math.min(100, left))}%` }}
+                            >
+                                {showLabel ? fmtAxisTick(tick) : ''}
+                            </span>
+                        );
+                    })}
                 </div>
+
+                {legendMode !== 'none' && legendEntries.length > 0 && (
+                    <div className={`timestate-legend timestate-legend--${legendMode}`}>
+                        {legendMode === 'table' ? (
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>State</th>
+                                        <th>Count</th>
+                                        <th>Duration</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {legendEntries.map((entry, idx) => (
+                                        <tr key={`legend-row-${idx}-${entry.label}`}>
+                                            <td>
+                                                <span className="timestate-legend-swatch" style={{ background: entry.color }} />
+                                                {entry.label}
+                                            </td>
+                                            <td>{entry.count}</td>
+                                            <td>{fmtDuration(entry.duration)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        ) : (
+                            <div className="timestate-legend-list">
+                                {legendEntries.map((entry, idx) => (
+                                    <span key={`legend-item-${idx}-${entry.label}`} className="timestate-legend-item">
+                                        <span className="timestate-legend-swatch" style={{ background: entry.color }} />
+                                        <span>{entry.label}</span>
+                                    </span>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
         );
     };
@@ -917,11 +1068,40 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                                                             value={dataSet.filter_type}
                                                             onChange={(e) => {
                                                                 clearDatasetSuggestions(idx);
-                                                                updateDataset(idx, { filter_type: e.target.value, filter_exact: '0' });
+                                                                updateDataset(idx, { filter_type: e.target.value });
+                                                                setItemSuggestionSignatures((prev) => {
+                                                                    if (!(idx in prev)) {
+                                                                        return prev;
+                                                                    }
+                                                                    const next = { ...prev };
+                                                                    delete next[idx];
+                                                                    return next;
+                                                                });
                                                             }}
                                                         >
                                                             <option value="key">Item key</option>
                                                             <option value="name">Item name</option>
+                                                        </select>
+                                                    </label>
+
+                                                    <label>
+                                                        <span className="editor-subtle">Filter match</span>
+                                                        <select
+                                                            value={String(dataSet.filter_exact || '0') === '1' ? '1' : '0'}
+                                                            onChange={(e) => {
+                                                                updateDataset(idx, { filter_exact: e.target.value === '1' ? '1' : '0' });
+                                                                setItemSuggestionSignatures((prev) => {
+                                                                    if (!(idx in prev)) {
+                                                                        return prev;
+                                                                    }
+                                                                    const next = { ...prev };
+                                                                    delete next[idx];
+                                                                    return next;
+                                                                });
+                                                            }}
+                                                        >
+                                                            <option value="0">Contains / wildcard</option>
+                                                            <option value="1">Exact</option>
                                                         </select>
                                                     </label>
 
@@ -942,7 +1122,7 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                                                                             if (String(e.target.value || '').trim() === '') {
                                                                                 clearDatasetSuggestions(idx);
                                                                             }
-                                                                            updateDataset(idx, { filter_value: e.target.value, filter_exact: '0' });
+                                                                            updateDataset(idx, { filter_value: e.target.value });
                                                                             setItemSuggestionSignatures((prev) => {
                                                                                 if (!(idx in prev)) {
                                                                                     return prev;
@@ -1129,6 +1309,51 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                                 <div className="editor-label">Refresh (seconds)</div>
                                 <div className="editor-control">
                                     <input type="number" min="5" max="3600" value={cfg.refreshSec} onChange={(e) => updateSettings({ refreshSec: Number(e.target.value) || 30 })} />
+                                </div>
+
+                                <div className="editor-label">Time axis tick interval</div>
+                                <div className="editor-control">
+                                    <select value={String(cfg.timeAxisTickSec ?? 0)} onChange={(e) => updateSettings({ timeAxisTickSec: Number(e.target.value) || 0 })}>
+                                        <option value="0">Auto</option>
+                                        <option value="60">1 minute</option>
+                                        <option value="300">5 minutes</option>
+                                        <option value="900">15 minutes</option>
+                                        <option value="1800">30 minutes</option>
+                                        <option value="3600">1 hour</option>
+                                        <option value="10800">3 hours</option>
+                                        <option value="21600">6 hours</option>
+                                        <option value="43200">12 hours</option>
+                                        <option value="86400">1 day</option>
+                                    </select>
+                                </div>
+
+                                <div className="editor-label">Time axis label density</div>
+                                <div className="editor-control">
+                                    <select value={String(cfg.timeAxisLabelDensity ?? 2)} onChange={(e) => updateSettings({ timeAxisLabelDensity: Math.max(1, Math.min(3, Number(e.target.value) || 2)) })}>
+                                        <option value="1">Sparse</option>
+                                        <option value="2">Normal</option>
+                                        <option value="3">Dense</option>
+                                    </select>
+                                </div>
+
+                                <div className="editor-label">Show grid lines</div>
+                                <div className="editor-control">
+                                    <label>
+                                        <input
+                                            type="checkbox"
+                                            checked={cfg.showGridLines !== false}
+                                            onChange={(e) => updateSettings({ showGridLines: e.target.checked })}
+                                        /> Enabled
+                                    </label>
+                                </div>
+
+                                <div className="editor-label">Legend mode</div>
+                                <div className="editor-control">
+                                    <select value={String(cfg.legendMode || 'list')} onChange={(e) => updateSettings({ legendMode: e.target.value })}>
+                                        <option value="none">Hidden</option>
+                                        <option value="list">List</option>
+                                        <option value="table">Table</option>
+                                    </select>
                                 </div>
                             </div>
                         </div>
