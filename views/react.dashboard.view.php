@@ -605,7 +605,7 @@ $page->show();
         position: absolute;
         top: calc(100% + 6px);
         right: 0;
-        width: min(560px, 92vw);
+        width: min(420px, 92vw);
         border: 1px solid var(--border-color);
         border-radius: 8px;
         background: var(--panel-bg);
@@ -621,15 +621,15 @@ $page->show();
     }
 
     .rd-color-tab {
-        height: 40px;
-        min-width: 92px;
+        height: 34px;
+        min-width: 82px;
         border: 1px solid var(--border-color);
-        border-radius: 12px;
+        border-radius: 10px;
         background: rgba(22, 32, 46, 0.9);
         color: var(--subtle-text);
         font-size: 12px;
         font-weight: 700;
-        padding: 0 14px;
+        padding: 0 12px;
         cursor: pointer;
     }
 
@@ -641,13 +641,13 @@ $page->show();
 
     .rd-color-grid {
         display: grid;
-        grid-template-columns: repeat(10, minmax(0, 1fr));
-        gap: 10px;
+        grid-template-columns: repeat(8, minmax(0, 1fr));
+        gap: 8px;
     }
 
     .rd-color-swatch {
         width: 100%;
-        height: 28px;
+        height: 24px;
         border-radius: 999px;
         border: 1px solid var(--border-color);
         box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
@@ -705,15 +705,15 @@ $page->show();
 
     .rd-color-wheel-row {
         display: grid;
-        grid-template-columns: 190px 1fr;
-        gap: 14px;
+        grid-template-columns: 150px 1fr;
+        gap: 10px;
         align-items: center;
     }
 
     .rd-color-wheel {
         position: relative;
-        width: 190px;
-        height: 190px;
+        width: 150px;
+        height: 150px;
         border-radius: 50%;
         border: 2px solid #2f4f7a;
         background:
@@ -800,7 +800,7 @@ $page->show();
 
     .rd-color-harmony-swatch {
         width: 100%;
-        height: 40px;
+        height: 34px;
         border: 1px solid rgba(255, 255, 255, 0.25);
         border-radius: 12px;
         cursor: pointer;

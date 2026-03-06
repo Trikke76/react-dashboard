@@ -321,9 +321,9 @@ window.ReactDashboardColorPickerField = ({
 
                     {activeTab === 'colors' ? (
                         <div className="rd-color-grid">
-                            {paletteColors.map((color) => (
+                            {paletteColors.map((color, index) => (
                                 <button
-                                    key={color}
+                                    key={`${color}-${index}`}
                                     type="button"
                                     className="rd-color-swatch"
                                     style={{ background: color }}
@@ -418,9 +418,9 @@ window.ReactDashboardColorPickerField = ({
                                 ))}
                             </div>
                             <div className="rd-color-harmony-swatches">
-                                {harmonySwatches.map((swatch) => (
+                                {harmonySwatches.map((swatch, index) => (
                                     <button
-                                        key={`${harmonyMode}-${swatch}`}
+                                        key={`${harmonyMode}-${index}-${swatch}`}
                                         type="button"
                                         className="rd-color-harmony-swatch"
                                         style={{ background: swatch }}
