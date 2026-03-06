@@ -3,7 +3,7 @@ window.ColorPickerField = ({
     onChange,
     defaultColor = '#607D8B'
 }) => {
-    const { useEffect, useMemo, useState } = React;
+    const { useMemo } = React;
 
     const normalizeColor = (raw, fallback = '#607D8B') => {
         const trimmed = String(raw || '').trim().toUpperCase();
@@ -21,15 +21,9 @@ window.ColorPickerField = ({
 
     const normalizedDefault = useMemo(() => normalizeColor(defaultColor, '#607D8B'), [defaultColor]);
     const normalizedValue = useMemo(() => normalizeColor(value, normalizedDefault), [value, normalizedDefault]);
-    const [textValue, setTextValue] = useState(normalizedValue);
-
-    useEffect(() => {
-        setTextValue(normalizedValue);
-    }, [normalizedValue]);
 
     const commitColor = (raw) => {
         const next = normalizeColor(raw, normalizedDefault);
-        setTextValue(next);
         if (typeof onChange === 'function') {
             onChange(next);
         }
@@ -38,22 +32,6 @@ window.ColorPickerField = ({
     return (
         <div className="zbx-color-picker">
             <span className="zbx-color-preview" style={{ background: normalizedValue }} />
-            <input
-                className="zbx-color-text"
-                type="text"
-                value={textValue}
-                onChange={(event) => setTextValue(event.target.value)}
-                onBlur={() => commitColor(textValue)}
-                onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                        event.preventDefault();
-                        commitColor(textValue);
-                    }
-                }}
-                placeholder="#607D8B"
-                spellCheck={false}
-                autoComplete="off"
-            />
             <input
                 className="zbx-color-native"
                 type="color"
