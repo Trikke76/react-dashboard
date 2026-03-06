@@ -1,6 +1,69 @@
 window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClient, globalData }) => {
     const { useState, useEffect, useMemo, useCallback } = React;
-    const ColorPickerField = window.ColorPickerField;
+    const createLocalColorPickerField = () => ({ value, onChange, defaultColor = '#607D8B' }) => {
+        const normalizeColor = (raw, fallback = '#607D8B') => {
+            const trimmed = String(raw || '').trim().toUpperCase();
+            if (/^#[0-9A-F]{6}$/.test(trimmed)) {
+                return trimmed;
+            }
+
+            const compact = trimmed.replace(/^#/, '');
+            if (/^[0-9A-F]{3}$/.test(compact)) {
+                return `#${compact.split('').map((char) => `${char}${char}`).join('')}`;
+            }
+
+            return String(fallback || '#607D8B').toUpperCase();
+        };
+
+        const normalizedDefault = useMemo(() => normalizeColor(defaultColor, '#607D8B'), [defaultColor]);
+        const normalizedValue = useMemo(() => normalizeColor(value, normalizedDefault), [value, normalizedDefault]);
+        const [textValue, setTextValue] = useState(normalizedValue);
+
+        useEffect(() => {
+            setTextValue(normalizedValue);
+        }, [normalizedValue]);
+
+        const commitColor = (raw) => {
+            const next = normalizeColor(raw, normalizedDefault);
+            setTextValue(next);
+            if (typeof onChange === 'function') {
+                onChange(next);
+            }
+        };
+
+        return (
+            <div className="zbx-color-picker">
+                <span className="zbx-color-preview" style={{ background: normalizedValue }} />
+                <input
+                    className="zbx-color-text"
+                    type="text"
+                    value={textValue}
+                    onChange={(event) => setTextValue(event.target.value)}
+                    onBlur={() => commitColor(textValue)}
+                    onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                            event.preventDefault();
+                            commitColor(textValue);
+                        }
+                    }}
+                    placeholder="#607D8B"
+                    spellCheck={false}
+                    autoComplete="off"
+                />
+                <input
+                    className="zbx-color-native"
+                    type="color"
+                    value={normalizedValue}
+                    onChange={(event) => commitColor(event.target.value)}
+                />
+            </div>
+        );
+    };
+
+    const ColorPickerField = window.ColorPickerField || createLocalColorPickerField();
+    if (!window.ColorPickerField) {
+        window.ColorPickerField = ColorPickerField;
+    }
 
     const DEFAULT_STATE_MAP = 'value:1=OK|#2E7D32,value:0=Problem|#C62828';
     const MAX_DATASETS = 10;
@@ -1265,19 +1328,11 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                                                                         onChange={(e) => updateDatasetMapping(idx, mappingIdx, { text: e.target.value })}
                                                                         placeholder="label"
                                                                     />
-                                                                    {ColorPickerField ? (
-                                                                        <ColorPickerField
-                                                                            value={row.color || '#607D8B'}
-                                                                            defaultColor="#607D8B"
-                                                                            onChange={(nextColor) => updateDatasetMapping(idx, mappingIdx, { color: nextColor })}
-                                                                        />
-                                                                    ) : (
-                                                                        <input
-                                                                            type="color"
-                                                                            value={row.color || '#607D8B'}
-                                                                            onChange={(e) => updateDatasetMapping(idx, mappingIdx, { color: e.target.value })}
-                                                                        />
-                                                                    )}
+                                                                    <ColorPickerField
+                                                                        value={row.color || '#607D8B'}
+                                                                        defaultColor="#607D8B"
+                                                                        onChange={(nextColor) => updateDatasetMapping(idx, mappingIdx, { color: nextColor })}
+                                                                    />
                                                                     <button className="btn-zbx btn-danger" type="button" onClick={() => removeDatasetMapping(idx, mappingIdx)}>✕</button>
                                                                 </div>
                                                                 <div className="editor-subtle">{mappingConditionHint(row.type)}</div>
