@@ -140,9 +140,9 @@ $page->show();
     }
 
     .dashboard-grid-host {
-        border: 1px solid var(--border-color);
-        border-radius: 8px;
-        background: var(--bg-elev-1);
+        border: 0;
+        border-radius: 0;
+        background: transparent;
         padding: 0;
     }
 
@@ -2026,7 +2026,7 @@ if (is_file($timestate_widget_file)) {
                         cols={gridCols}
                         rowHeight={30}
                         width={gridWidth}
-                        margin={[4, 4]}
+                        margin={[7, 7]}
                         containerPadding={[0, 0]}
                         compactType={null}
                         draggableHandle=".widget-header"
