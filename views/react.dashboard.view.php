@@ -466,6 +466,19 @@ $page->show();
         border-radius: 2px;
     }
 
+    .editor-range-fields {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 4px;
+        width: 100%;
+        min-width: 0;
+    }
+
+    .editor-range-fields input {
+        width: 100%;
+        min-width: 0;
+    }
+
     .editor-segment {
         display: inline-flex;
         border: 1px solid var(--border-color);
@@ -594,6 +607,23 @@ $page->show();
         bottom: 0;
         border-right: 1px solid rgba(0, 0, 0, 0.2);
         z-index: 2;
+        overflow: hidden;
+    }
+
+    .timestate-segment-label {
+        position: absolute;
+        left: 4px;
+        right: 4px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: rgba(255, 255, 255, 0.95);
+        font-size: 10px;
+        line-height: 1;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        pointer-events: none;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
     }
 
     .timestate-axis {
@@ -1156,6 +1186,9 @@ if (is_file($timestate_widget_file)) {
         timeAxisLabelDensity: 2,
         showGridLines: true,
         legendMode: 'list',
+        legendShowCount: true,
+        legendShowDuration: true,
+        showSegmentLabels: false,
         datasetsJson: '',
         stateMap: 'value:1=OK|#2E7D32,value:0=Problem|#C62828'
     };
@@ -1245,6 +1278,9 @@ if (is_file($timestate_widget_file)) {
             safe.timeAxisLabelDensity = toBoundedInt(base.timeAxisLabelDensity, 2, 1, 3);
             safe.showGridLines = toBoolean(base.showGridLines, true);
             safe.legendMode = ['none', 'list', 'table'].includes(base.legendMode) ? base.legendMode : 'list';
+            safe.legendShowCount = toBoolean(base.legendShowCount, true);
+            safe.legendShowDuration = toBoolean(base.legendShowDuration, true);
+            safe.showSegmentLabels = toBoolean(base.showSegmentLabels, false);
             safe.stateMap = toText(base.stateMap, TIMESTATE_DEFAULT_WIDGET.stateMap, 2048);
             safe.datasetsJson = sanitizeDatasetsJson(base.datasetsJson);
             return safe;

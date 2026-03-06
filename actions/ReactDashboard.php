@@ -134,16 +134,8 @@ class ReactDashboard extends CController {
             }
 
             $items = API::Item()->get($params) ?: [];
-            if ($filter_exact) {
-                $items = array_values(array_filter($items, static function(array $item) use ($item_filter, $filter_mode): bool {
-                    if ($item_filter === '') {
-                        return true;
-                    }
-
-                    $field = $filter_mode === 'name' ? 'name' : 'key_';
-                    return strcasecmp((string) ($item[$field] ?? ''), $item_filter) === 0;
-                }));
-            }
+            $field = $filter_mode === 'name' ? 'name' : 'key_';
+            $items = $this->applyItemFilter($items, $field, $item_filter, $filter_exact);
 
             usort($items, static function(array $a, array $b): int {
                 $host_a = isset($a['hosts'][0]['name']) ? (string) $a['hosts'][0]['name'] : '';
@@ -234,12 +226,9 @@ class ReactDashboard extends CController {
                 }
 
                 $items = API::Item()->get($params) ?: [];
-                if ((int) ($data_set['filter_exact'] ?? 0) === 1 && $filter_value !== '') {
-                    $items = array_values(array_filter($items, static function(array $item) use ($filter_value, $filter_type): bool {
-                        $field = $filter_type === 'name' ? 'name' : 'key_';
-                        return strcasecmp((string) ($item[$field] ?? ''), $filter_value) === 0;
-                    }));
-                }
+                $field = $filter_type === 'name' ? 'name' : 'key_';
+                $filter_exact = ((int) ($data_set['filter_exact'] ?? 0)) === 1;
+                $items = $this->applyItemFilter($items, $field, $filter_value, $filter_exact);
 
                 usort($items, static function(array $a, array $b): int {
                     $host_a = isset($a['hosts'][0]['name']) ? (string) $a['hosts'][0]['name'] : '';
@@ -435,16 +424,54 @@ class ReactDashboard extends CController {
     }
 
     private function normalizeSearchPattern(string $value): string {
-        $value = trim($value);
-        if ($value === '') {
-            return $value;
+        return trim($value);
+    }
+
+    private function applyItemFilter(array $items, string $field, string $filter, bool $filter_exact): array {
+        $filter = trim($filter);
+        if ($filter === '') {
+            return $items;
         }
 
-        if (str_contains($value, '*') || str_contains($value, '?')) {
-            return $value;
+        return array_values(array_filter($items, function(array $item) use ($field, $filter, $filter_exact): bool {
+            $candidate = (string) ($item[$field] ?? '');
+            return $this->matchesItemFilter($candidate, $filter, $filter_exact);
+        }));
+    }
+
+    private function matchesItemFilter(string $candidate, string $filter, bool $filter_exact): bool {
+        if ($filter_exact) {
+            return strcasecmp($candidate, $filter) === 0;
         }
 
-        return '*' . $value . '*';
+        if (!$this->hasWildcard($filter)) {
+            return strcasecmp($candidate, $filter) === 0;
+        }
+
+        $regex = $this->compileWildcardRegex($filter);
+        return $regex !== null && preg_match($regex, $candidate) === 1;
+    }
+
+    private function hasWildcard(string $value): bool {
+        return str_contains($value, '*') || str_contains($value, '?');
+    }
+
+    private function compileWildcardRegex(string $pattern): ?string {
+        if ($pattern === '') {
+            return null;
+        }
+
+        $quoted = preg_quote($pattern, '/');
+        $quoted = str_replace(['\\*', '\\?'], ['.*', '.'], $quoted);
+        $regex = '/^' . $quoted . '$/iu';
+
+        set_error_handler(static function(): bool {
+            return true;
+        }, E_WARNING);
+        $is_valid = preg_match($regex, '') !== false;
+        restore_error_handler();
+
+        return $is_valid ? $regex : null;
     }
 
     private function parseDataSets(string $raw, array $fallback): array {

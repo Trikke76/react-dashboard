@@ -49,6 +49,9 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
         timeAxisLabelDensity: 2,
         showGridLines: true,
         legendMode: 'list',
+        legendShowCount: true,
+        legendShowDuration: true,
+        showSegmentLabels: false,
         stateMap: DEFAULT_STATE_MAP,
         datasetsJson: ''
     };
@@ -602,7 +605,9 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
         const hostidsCsv = String(cfg.hostidsCsv || '');
         const filterMode = String(dataset && dataset.filter_type ? dataset.filter_type : 'key') === 'name' ? 'name' : 'key';
         const filterValue = String(dataset && dataset.filter_value ? dataset.filter_value : '').trim();
-        const signature = [hostidsCsv, filterMode, filterValue].join('|');
+        const hasWildcard = filterValue.includes('*') || filterValue.includes('?');
+        const suggestionFilter = hasWildcard ? filterValue : `*${filterValue}*`;
+        const signature = [hostidsCsv, filterMode, suggestionFilter].join('|');
 
         if (hostidsCsv === '' || filterValue === '') {
             clearDatasetSuggestions(datasetIdx);
@@ -617,7 +622,7 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                 action_type: 'timestate_items',
                 hostids_csv: hostidsCsv,
                 filter_mode: filterMode,
-                item_filter: filterValue,
+                item_filter: suggestionFilter,
                 filter_exact: '0',
                 max_rows: '40'
             }, 10000);
@@ -708,6 +713,9 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
     const labelDensity = Math.max(1, Math.min(3, Number(cfg.timeAxisLabelDensity) || 2));
     const showGridLines = cfg.showGridLines !== false;
     const legendMode = ['none', 'list', 'table'].includes(String(cfg.legendMode || 'list')) ? String(cfg.legendMode || 'list') : 'list';
+    const legendShowCount = cfg.legendShowCount !== false;
+    const legendShowDuration = cfg.legendShowDuration !== false;
+    const showSegmentLabels = cfg.showSegmentLabels === true;
 
     const chooseAutoTickInterval = (rangeSeconds) => {
         const steps = [60, 300, 900, 1800, 3600, 7200, 10800, 21600, 43200, 86400, 172800, 604800];
@@ -842,7 +850,13 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                                 background: segment.color || '#607D8B'
                             }}
                             title={`Value: ${raw || label}\nFrom: ${fmtDateTime(from)}\nTo: ${fmtDateTime(to)}`}
-                        />
+                        >
+                            {showSegmentLabels && width >= 8 && (
+                                <span className="timestate-segment-label">
+                                    {label}
+                                </span>
+                            )}
+                        </span>
                     );
                 })}
             </div>
@@ -924,8 +938,8 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                                 <thead>
                                     <tr>
                                         <th>State</th>
-                                        <th>Count</th>
-                                        <th>Duration</th>
+                                        {legendShowCount && <th>Count</th>}
+                                        {legendShowDuration && <th>Duration</th>}
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -935,8 +949,8 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                                                 <span className="timestate-legend-swatch" style={{ background: entry.color }} />
                                                 {entry.label}
                                             </td>
-                                            <td>{entry.count}</td>
-                                            <td>{fmtDuration(entry.duration)}</td>
+                                            {legendShowCount && <td>{entry.count}</td>}
+                                            {legendShowDuration && <td>{fmtDuration(entry.duration)}</td>}
                                         </tr>
                                     ))}
                                 </tbody>
@@ -947,6 +961,8 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                                     <span key={`legend-item-${idx}-${entry.label}`} className="timestate-legend-item">
                                         <span className="timestate-legend-swatch" style={{ background: entry.color }} />
                                         <span>{entry.label}</span>
+                                        {legendShowCount && <span className="editor-subtle">#{entry.count}</span>}
+                                        {legendShowDuration && <span className="editor-subtle">{fmtDuration(entry.duration)}</span>}
                                     </span>
                                 ))}
                             </div>
@@ -1100,7 +1116,7 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                                                                 });
                                                             }}
                                                         >
-                                                            <option value="0">Contains / wildcard</option>
+                                                            <option value="0">Pattern (*, ?)</option>
                                                             <option value="1">Exact</option>
                                                         </select>
                                                     </label>
@@ -1206,7 +1222,7 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                                                                         (() => {
                                                                             const bounds = splitRangeCondition(row.condition);
                                                                             return (
-                                                                                <div className="editor-inline-actions" style={{ gap: '4px' }}>
+                                                                                <div className="editor-range-fields">
                                                                                     <input
                                                                                         type="text"
                                                                                         value={bounds.from}
@@ -1354,6 +1370,39 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                                         <option value="list">List</option>
                                         <option value="table">Table</option>
                                     </select>
+                                </div>
+
+                                <div className="editor-label">Legend: show count</div>
+                                <div className="editor-control">
+                                    <label>
+                                        <input
+                                            type="checkbox"
+                                            checked={cfg.legendShowCount !== false}
+                                            onChange={(e) => updateSettings({ legendShowCount: e.target.checked })}
+                                        /> Enabled
+                                    </label>
+                                </div>
+
+                                <div className="editor-label">Legend: show total duration</div>
+                                <div className="editor-control">
+                                    <label>
+                                        <input
+                                            type="checkbox"
+                                            checked={cfg.legendShowDuration !== false}
+                                            onChange={(e) => updateSettings({ legendShowDuration: e.target.checked })}
+                                        /> Enabled
+                                    </label>
+                                </div>
+
+                                <div className="editor-label">Segment labels</div>
+                                <div className="editor-control">
+                                    <label>
+                                        <input
+                                            type="checkbox"
+                                            checked={cfg.showSegmentLabels === true}
+                                            onChange={(e) => updateSettings({ showSegmentLabels: e.target.checked })}
+                                        /> Enabled
+                                    </label>
                                 </div>
                             </div>
                         </div>
