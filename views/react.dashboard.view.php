@@ -49,7 +49,7 @@ $page->show();
     }
 
     .dashboard-shell {
-        padding: 18px;
+        padding: 8px;
     }
 
     .dashboard-topbar {
@@ -143,7 +143,7 @@ $page->show();
         border: 1px solid var(--border-color);
         border-radius: 8px;
         background: var(--bg-elev-1);
-        padding: 8px;
+        padding: 0;
     }
 
     .react-grid-item.react-grid-placeholder {
@@ -217,7 +217,7 @@ $page->show();
 
     .widget-body {
         flex: 1;
-        padding: 14px;
+        padding: 8px;
         position: relative;
         display: flex;
         align-items: center;
@@ -352,11 +352,12 @@ $page->show();
 
     .clock-editor {
         width: 100%;
-        max-width: 620px;
+        max-width: none;
+        height: 100%;
         border: 1px solid var(--border-color);
         background: var(--panel-bg);
         border-radius: 4px;
-        padding: 12px;
+        padding: 6px;
         overflow: auto;
         max-height: 100%;
     }
@@ -376,14 +377,14 @@ $page->show();
     .editor-title {
         font-size: 15px;
         font-weight: 700;
-        margin-bottom: 10px;
+        margin-bottom: 6px;
     }
 
     .editor-grid {
         display: grid;
         grid-template-columns: 180px 1fr;
-        row-gap: 10px;
-        column-gap: 10px;
+        row-gap: 6px;
+        column-gap: 8px;
         align-items: center;
     }
 
@@ -909,9 +910,9 @@ $page->show();
     }
 
     .editor-advanced {
-        margin-top: 12px;
+        margin-top: 8px;
         border-top: 1px solid var(--border-color);
-        padding-top: 10px;
+        padding-top: 8px;
     }
 
     .editor-advanced-title {
@@ -922,7 +923,7 @@ $page->show();
     }
 
     .editor-footer {
-        margin-top: 12px;
+        margin-top: 8px;
         display: flex;
         justify-content: flex-end;
     }
@@ -1103,7 +1104,7 @@ $page->show();
 
     @media (max-width: 900px) {
         .dashboard-shell {
-            padding: 10px;
+            padding: 6px;
         }
         .dashboard-topbar {
             flex-direction: column;
@@ -2025,6 +2026,8 @@ if (is_file($timestate_widget_file)) {
                         cols={gridCols}
                         rowHeight={30}
                         width={gridWidth}
+                        margin={[4, 4]}
+                        containerPadding={[0, 0]}
                         compactType={null}
                         draggableHandle=".widget-header"
                         onLayoutChange={onLayoutChange}
