@@ -579,23 +579,12 @@ $page->show();
 
     .zbx-color-picker {
         position: relative;
-        display: grid;
-        grid-template-columns: 20px 42px;
-        align-items: center;
-        gap: 5px;
+        display: inline-flex;
         min-width: 0;
     }
 
-    .zbx-color-preview {
-        width: 18px;
-        height: 18px;
-        border-radius: 3px;
-        border: 1px solid var(--border-color);
-        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
-    }
-
     .zbx-color-trigger {
-        width: 100%;
+        width: 42px;
         height: 30px;
         padding: 0;
         border: 1px solid var(--border-color);
@@ -616,85 +605,94 @@ $page->show();
         position: absolute;
         top: calc(100% + 6px);
         right: 0;
-        width: 220px;
+        width: 340px;
         border: 1px solid var(--border-color);
-        border-radius: 4px;
+        border-radius: 8px;
         background: var(--panel-bg);
         box-shadow: 0 14px 28px rgba(0, 0, 0, 0.4);
-        padding: 8px;
+        padding: 10px;
         z-index: 220;
     }
 
-    .zbx-color-sv {
-        position: relative;
-        height: 132px;
+    .zbx-color-tabs {
+        display: inline-flex;
+        gap: 8px;
+        margin-bottom: 10px;
+    }
+
+    .zbx-color-tab {
+        height: 40px;
+        min-width: 92px;
         border: 1px solid var(--border-color);
-        border-radius: 3px;
-        overflow: hidden;
-        cursor: crosshair;
+        border-radius: 12px;
+        background: rgba(22, 32, 46, 0.9);
+        color: var(--subtle-text);
+        font-size: 12px;
+        font-weight: 700;
+        padding: 0 14px;
+        cursor: pointer;
     }
 
-    .zbx-color-sv-white {
-        position: absolute;
-        inset: 0;
-        background: linear-gradient(to right, #fff, rgba(255, 255, 255, 0));
+    .zbx-color-tab.active {
+        background: rgba(53, 138, 90, 0.9);
+        color: #f3fff7;
+        border-color: rgba(95, 186, 133, 0.75);
     }
 
-    .zbx-color-sv-black {
-        position: absolute;
-        inset: 0;
-        background: linear-gradient(to top, #000, rgba(0, 0, 0, 0));
-    }
-
-    .zbx-color-sv-cursor {
-        position: absolute;
-        width: 10px;
-        height: 10px;
-        margin-left: -5px;
-        margin-top: -5px;
-        border-radius: 50%;
-        border: 2px solid #fff;
-        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
-        pointer-events: none;
-    }
-
-    .zbx-color-hue {
-        width: 100%;
-        margin-top: 8px;
-    }
-
-    .zbx-color-presets {
-        margin-top: 8px;
+    .zbx-color-grid {
         display: grid;
-        grid-template-columns: repeat(6, minmax(0, 1fr));
-        gap: 4px;
+        grid-template-columns: repeat(10, minmax(0, 1fr));
+        gap: 10px;
     }
 
-    .zbx-color-preset {
+    .zbx-color-swatch {
         width: 100%;
-        height: 16px;
+        aspect-ratio: 1 / 1;
+        border-radius: 999px;
         border: 1px solid var(--border-color);
-        border-radius: 2px;
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
         cursor: pointer;
         padding: 0;
     }
 
-    .zbx-color-popover-footer {
-        margin-top: 8px;
+    .zbx-color-custom {
         display: flex;
-        justify-content: flex-end;
+        flex-direction: column;
+        gap: 8px;
     }
 
-    .zbx-color-popover-close {
-        height: 24px;
+    .zbx-color-custom-input {
+        height: 32px;
         border: 1px solid var(--border-color);
-        border-radius: 2px;
+        border-radius: 4px;
+        background: var(--input-bg);
+        color: var(--text-color);
+        font-size: 12px;
+        padding: 0 8px;
+        font-family: var(--font-mono);
+        text-transform: uppercase;
+    }
+
+    .zbx-color-custom-actions {
+        display: flex;
+        gap: 8px;
+    }
+
+    .zbx-color-custom-btn {
+        height: 28px;
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
         background: var(--input-bg);
         color: var(--text-color);
         font-size: 11px;
         font-weight: 700;
-        padding: 0 8px;
+        padding: 0 10px;
         cursor: pointer;
+    }
+
+    .zbx-color-custom-btn:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
     }
 
     .editor-range-fields {

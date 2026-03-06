@@ -3,9 +3,7 @@ window.ReactDashboardColorPickerField = ({
     onChange,
     defaultColor = '#607D8B'
 }) => {
-    const { useMemo, useState, useEffect, useRef, useCallback } = React;
-
-    const clamp = (num, min, max) => Math.max(min, Math.min(max, num));
+    const { useMemo, useState, useEffect, useRef } = React;
 
     const normalizeColor = (raw, fallback = '#607D8B') => {
         const trimmed = String(raw || '').trim().toUpperCase();
@@ -21,167 +19,17 @@ window.ReactDashboardColorPickerField = ({
         return String(fallback || '#607D8B').toUpperCase();
     };
 
-    const hexToRgb = (hex) => {
-        const color = normalizeColor(hex, '#607D8B').slice(1);
-        return {
-            r: parseInt(color.slice(0, 2), 16),
-            g: parseInt(color.slice(2, 4), 16),
-            b: parseInt(color.slice(4, 6), 16)
-        };
-    };
-
-    const rgbToHex = ({ r, g, b }) => {
-        const toHex = (num) => clamp(Math.round(num), 0, 255).toString(16).padStart(2, '0').toUpperCase();
-        return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
-    };
-
-    const rgbToHsv = ({ r, g, b }) => {
-        const rn = r / 255;
-        const gn = g / 255;
-        const bn = b / 255;
-
-        const max = Math.max(rn, gn, bn);
-        const min = Math.min(rn, gn, bn);
-        const delta = max - min;
-
-        let h = 0;
-        if (delta !== 0) {
-            if (max === rn) {
-                h = ((gn - bn) / delta) % 6;
-            }
-            else if (max === gn) {
-                h = ((bn - rn) / delta) + 2;
-            }
-            else {
-                h = ((rn - gn) / delta) + 4;
-            }
-            h *= 60;
-            if (h < 0) {
-                h += 360;
-            }
-        }
-
-        const s = max === 0 ? 0 : (delta / max) * 100;
-        const v = max * 100;
-
-        return {
-            h: clamp(h, 0, 360),
-            s: clamp(s, 0, 100),
-            v: clamp(v, 0, 100)
-        };
-    };
-
-    const hsvToRgb = ({ h, s, v }) => {
-        const hh = (clamp(h, 0, 360) % 360) / 60;
-        const ss = clamp(s, 0, 100) / 100;
-        const vv = clamp(v, 0, 100) / 100;
-
-        const c = vv * ss;
-        const x = c * (1 - Math.abs((hh % 2) - 1));
-        const m = vv - c;
-
-        let rp = 0;
-        let gp = 0;
-        let bp = 0;
-
-        if (hh >= 0 && hh < 1) {
-            rp = c; gp = x; bp = 0;
-        }
-        else if (hh >= 1 && hh < 2) {
-            rp = x; gp = c; bp = 0;
-        }
-        else if (hh >= 2 && hh < 3) {
-            rp = 0; gp = c; bp = x;
-        }
-        else if (hh >= 3 && hh < 4) {
-            rp = 0; gp = x; bp = c;
-        }
-        else if (hh >= 4 && hh < 5) {
-            rp = x; gp = 0; bp = c;
-        }
-        else {
-            rp = c; gp = 0; bp = x;
-        }
-
-        return {
-            r: (rp + m) * 255,
-            g: (gp + m) * 255,
-            b: (bp + m) * 255
-        };
-    };
-
-    const hsvToHex = (hsv) => rgbToHex(hsvToRgb(hsv));
-    const hexToHsv = (hex) => rgbToHsv(hexToRgb(hex));
-
     const rootRef = useRef(null);
-    const svRef = useRef(null);
-
     const normalizedDefault = useMemo(() => normalizeColor(defaultColor, '#607D8B'), [defaultColor]);
     const normalizedValue = useMemo(() => normalizeColor(value, normalizedDefault), [value, normalizedDefault]);
 
     const [isOpen, setIsOpen] = useState(false);
-    const [isDraggingSv, setIsDraggingSv] = useState(false);
-    const [hsv, setHsv] = useState(() => hexToHsv(normalizedValue));
+    const [activeTab, setActiveTab] = useState('colors');
+    const [customHex, setCustomHex] = useState(normalizedValue);
 
     useEffect(() => {
-        setHsv(hexToHsv(normalizedValue));
-    }, [normalizedValue]);
-
-    const emitColor = useCallback((nextHsv) => {
-        if (typeof onChange === 'function') {
-            onChange(hsvToHex(nextHsv));
-        }
-    }, [onChange]);
-
-    const applySVAt = useCallback((clientX, clientY) => {
-        if (!svRef.current) {
-            return;
-        }
-
-        const rect = svRef.current.getBoundingClientRect();
-        if (rect.width <= 0 || rect.height <= 0) {
-            return;
-        }
-
-        const x = clamp(clientX - rect.left, 0, rect.width);
-        const y = clamp(clientY - rect.top, 0, rect.height);
-        const s = (x / rect.width) * 100;
-        const v = 100 - ((y / rect.height) * 100);
-
-        setHsv((prev) => {
-            const next = { ...prev, s, v };
-            emitColor(next);
-            return next;
-        });
-    }, [emitColor]);
-
-    useEffect(() => {
-        if (!isDraggingSv) {
-            return;
-        }
-
-        const onMouseMove = (event) => {
-            applySVAt(event.clientX, event.clientY);
-        };
-        const onTouchMove = (event) => {
-            if (event.touches && event.touches[0]) {
-                applySVAt(event.touches[0].clientX, event.touches[0].clientY);
-            }
-        };
-        const stopDrag = () => setIsDraggingSv(false);
-
-        window.addEventListener('mousemove', onMouseMove);
-        window.addEventListener('mouseup', stopDrag);
-        window.addEventListener('touchmove', onTouchMove, { passive: true });
-        window.addEventListener('touchend', stopDrag);
-
-        return () => {
-            window.removeEventListener('mousemove', onMouseMove);
-            window.removeEventListener('mouseup', stopDrag);
-            window.removeEventListener('touchmove', onTouchMove);
-            window.removeEventListener('touchend', stopDrag);
-        };
-    }, [isDraggingSv, applySVAt]);
+        setCustomHex(normalizedValue);
+    }, [normalizedValue, isOpen]);
 
     useEffect(() => {
         const onDocumentMouseDown = (event) => {
@@ -207,14 +55,29 @@ window.ReactDashboardColorPickerField = ({
         };
     }, []);
 
-    const hueColor = useMemo(() => hsvToHex({ h: hsv.h, s: 100, v: 100 }), [hsv.h]);
-    const currentHex = useMemo(() => hsvToHex(hsv), [hsv]);
+    const emitColor = (raw) => {
+        if (typeof onChange === 'function') {
+            onChange(normalizeColor(raw, normalizedDefault));
+        }
+    };
 
-    const presetColors = ['#2E7D32', '#C62828', '#607D8B', '#F9A825', '#1E88E5', '#8E24AA', '#EF6C00', '#26A69A', '#6D4C41', '#455A64', '#000000', '#FFFFFF'];
+    const paletteColors = [
+        '#991B1B', '#B91C1C', '#DC2626', '#EF4444', '#F87171', '#FCA5A5', '#FECACA', '#FEE2E2', '#7F1D1D', '#9A3412',
+        '#C2410C', '#EA580C', '#F97316', '#FB923C', '#FDBA74', '#FED7AA', '#7C2D12', '#9A3412', '#B45309', '#D97706',
+        '#F59E0B', '#FBBF24', '#FCD34D', '#FDE68A', '#78350F', '#92400E', '#A16207', '#CA8A04', '#EAB308', '#FACC15',
+        '#365314', '#3F6212', '#4D7C0F', '#65A30D', '#84CC16', '#A3E635', '#BEF264', '#D9F99D', '#14532D', '#166534',
+        '#15803D', '#16A34A', '#22C55E', '#4ADE80', '#86EFAC', '#BBF7D0', '#134E4A', '#115E59', '#0F766E', '#0D9488',
+        '#14B8A6', '#2DD4BF', '#5EEAD4', '#99F6E4', '#0C4A6E', '#075985', '#0369A1', '#0284C7', '#0EA5E9', '#38BDF8',
+        '#7DD3FC', '#BAE6FD', '#1E3A8A', '#1D4ED8', '#2563EB', '#3B82F6', '#60A5FA', '#93C5FD', '#BFDBFE', '#DBEAFE',
+        '#3B0764', '#5B21B6', '#6D28D9', '#7C3AED', '#8B5CF6', '#A78BFA', '#C4B5FD', '#DDD6FE', '#831843', '#BE185D',
+        '#DB2777', '#EC4899', '#F472B6', '#F9A8D4', '#FBCFE8', '#FCE7F3', '#0F172A', '#1E293B', '#334155', '#475569',
+        '#64748B', '#94A3B8', '#CBD5E1', '#E2E8F0'
+    ];
+
+    const isCustomValid = /^#[0-9A-F]{6}$/.test(String(customHex || '').trim().toUpperCase());
 
     return (
         <div className="zbx-color-picker" ref={rootRef}>
-            <span className="zbx-color-preview" style={{ background: currentHex }} />
             <button
                 type="button"
                 className="zbx-color-trigger"
@@ -222,76 +85,83 @@ window.ReactDashboardColorPickerField = ({
                 aria-haspopup="dialog"
                 aria-expanded={isOpen ? 'true' : 'false'}
             >
-                <span className="zbx-color-trigger-swatch" style={{ background: currentHex }} />
+                <span className="zbx-color-trigger-swatch" style={{ background: normalizedValue }} />
             </button>
 
             {isOpen && (
                 <div className="zbx-color-popover" role="dialog" aria-label="Color picker">
-                    <div
-                        className="zbx-color-sv"
-                        ref={svRef}
-                        style={{ background: hueColor }}
-                        onMouseDown={(event) => {
-                            event.preventDefault();
-                            applySVAt(event.clientX, event.clientY);
-                            setIsDraggingSv(true);
-                        }}
-                        onTouchStart={(event) => {
-                            if (event.touches && event.touches[0]) {
-                                applySVAt(event.touches[0].clientX, event.touches[0].clientY);
-                                setIsDraggingSv(true);
-                            }
-                        }}
-                    >
-                        <div className="zbx-color-sv-white" />
-                        <div className="zbx-color-sv-black" />
-                        <span
-                            className="zbx-color-sv-cursor"
-                            style={{
-                                left: `${hsv.s}%`,
-                                top: `${100 - hsv.v}%`,
-                                background: currentHex
-                            }}
-                        />
-                    </div>
-
-                    <input
-                        className="zbx-color-hue"
-                        type="range"
-                        min="0"
-                        max="360"
-                        value={Math.round(hsv.h)}
-                        onChange={(event) => {
-                            const nextHue = clamp(Number(event.target.value) || 0, 0, 360);
-                            setHsv((prev) => {
-                                const next = { ...prev, h: nextHue };
-                                emitColor(next);
-                                return next;
-                            });
-                        }}
-                    />
-
-                    <div className="zbx-color-presets">
-                        {presetColors.map((preset) => (
-                            <button
-                                key={preset}
-                                type="button"
-                                className="zbx-color-preset"
-                                style={{ background: preset }}
-                                onClick={() => {
-                                    const next = hexToHsv(preset);
-                                    setHsv(next);
-                                    emitColor(next);
-                                }}
-                            />
-                        ))}
-                    </div>
-
-                    <div className="zbx-color-popover-footer">
-                        <button type="button" className="zbx-color-popover-close" onClick={() => setIsOpen(false)}>
-                            Close
+                    <div className="zbx-color-tabs">
+                        <button
+                            type="button"
+                            className={`zbx-color-tab ${activeTab === 'colors' ? 'active' : ''}`}
+                            onClick={() => setActiveTab('colors')}
+                        >
+                            Colors
+                        </button>
+                        <button
+                            type="button"
+                            className={`zbx-color-tab ${activeTab === 'custom' ? 'active' : ''}`}
+                            onClick={() => setActiveTab('custom')}
+                        >
+                            Custom
                         </button>
                     </div>
+
+                    {activeTab === 'colors' ? (
+                        <div className="zbx-color-grid">
+                            {paletteColors.map((color) => (
+                                <button
+                                    key={color}
+                                    type="button"
+                                    className="zbx-color-swatch"
+                                    style={{ background: color }}
+                                    onClick={() => {
+                                        emitColor(color);
+                                        setIsOpen(false);
+                                    }}
+                                />
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="zbx-color-custom">
+                            <input
+                                type="text"
+                                className="zbx-color-custom-input"
+                                value={customHex}
+                                onChange={(event) => setCustomHex(event.target.value)}
+                                onKeyDown={(event) => {
+                                    if (event.key === 'Enter' && isCustomValid) {
+                                        event.preventDefault();
+                                        emitColor(customHex);
+                                        setIsOpen(false);
+                                    }
+                                }}
+                                placeholder="#607D8B"
+                                spellCheck={false}
+                                autoComplete="off"
+                            />
+                            <div className="zbx-color-custom-actions">
+                                <button
+                                    type="button"
+                                    className="zbx-color-custom-btn"
+                                    disabled={!isCustomValid}
+                                    onClick={() => {
+                                        emitColor(customHex);
+                                        setIsOpen(false);
+                                    }}
+                                >
+                                    Apply
+                                </button>
+                                <button
+                                    type="button"
+                                    className="zbx-color-custom-btn"
+                                    onClick={() => setCustomHex(normalizedValue)}
+                                >
+                                    Reset
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
         </div>
