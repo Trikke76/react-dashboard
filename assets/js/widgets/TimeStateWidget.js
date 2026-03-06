@@ -500,7 +500,9 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
             return { from: '', to: '' };
         }
 
-        const separatorIndex = value.indexOf('..');
+        // Split on the last range separator so transient values like "0...100"
+        // (while typing "0." with an existing "to") keep "from" stable.
+        const separatorIndex = value.lastIndexOf('..');
         if (separatorIndex === -1) {
             return { from: value, to: '' };
         }
