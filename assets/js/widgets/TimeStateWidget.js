@@ -1,4 +1,4 @@
-window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClient, globalData }) => {
+window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClient, globalData, isEditing, setEditing, editorHost }) => {
     const { useState, useEffect, useMemo, useCallback } = React;
     const ColorPickerField = window.ReactDashboardColorPickerField;
     const HostSelectorField = window.ReactDashboardHostSelectorField;
@@ -61,7 +61,7 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
 
     const cfg = { ...DEFAULTS, ...settings };
 
-    const [editMode, setEditMode] = useState(false);
+    const [localEditMode, setLocalEditMode] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [model, setModel] = useState({ rows: [], time_from: 0, time_to: 0 });
@@ -76,6 +76,18 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
     const [itemSuggestionSignatures, setItemSuggestionSignatures] = useState({});
     const [datasetNumberDrafts, setDatasetNumberDrafts] = useState({});
     const [refreshSecDraft, setRefreshSecDraft] = useState(String(cfg.refreshSec));
+    const editMode = typeof isEditing === 'boolean' ? isEditing : localEditMode;
+    const setEditMode = useCallback((nextValue) => {
+        const resolved = typeof nextValue === 'function'
+            ? Boolean(nextValue(editMode))
+            : Boolean(nextValue);
+        if (typeof setEditing === 'function') {
+            setEditing(resolved);
+        }
+        else {
+            setLocalEditMode(resolved);
+        }
+    }, [editMode, setEditing]);
 
     const parseCsvIds = (raw) => String(raw || '')
         .split(/[\s,]+/)
@@ -1105,8 +1117,9 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                     </div>
                 )}
 
-                {editMode ? (
-                    <div className="clock-editor clock-editor--timestate">
+                {editMode ? (() => {
+                    const editor = (
+                        <div className="clock-editor clock-editor--timestate">
                         <div className="editor-title">Time State</div>
                         <div className="editor-grid">
                             <div className="editor-label">Name</div>
@@ -1629,8 +1642,18 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                         <div className="editor-footer">
                             <button className="btn-zbx" onClick={() => { setEditMode(false); fetchData(); }}>Done</button>
                         </div>
-                    </div>
-                ) : (
+                        </div>
+                    );
+                    if (editorHost && ReactDOM && typeof ReactDOM.createPortal === 'function') {
+                        return (
+                            <>
+                                {renderTimeline()}
+                                {ReactDOM.createPortal(editor, editorHost)}
+                            </>
+                        );
+                    }
+                    return renderTimeline();
+                })() : (
                     renderTimeline()
                 )}
             </div>

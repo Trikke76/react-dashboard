@@ -85,17 +85,29 @@ window.ReactDashboardClockWidget = (() => {
         };
     };
 
-    window.ClockWidget = ({ remove, settings, updateSettings }) => {
-        const { useState, useEffect, useMemo, useRef } = React;
+    window.ClockWidget = ({ remove, settings, updateSettings, isEditing, setEditing, editorHost }) => {
+        const { useState, useEffect, useMemo, useRef, useCallback } = React;
         const ColorPickerField = window.ReactDashboardColorPickerField;
 
         const cfg = { ...DEFAULTS, ...sanitizeSettings(settings || {}) };
 
-        const [editMode, setEditMode] = useState(false);
+        const [localEditMode, setLocalEditMode] = useState(false);
         const [now, setNow] = useState(new Date());
         const bodyRef = useRef(null);
         const [bodySize, setBodySize] = useState({ width: 320, height: 220 });
         const [dateSizeDraft, setDateSizeDraft] = useState(String(cfg.dateSize));
+        const editMode = typeof isEditing === 'boolean' ? isEditing : localEditMode;
+        const setEditMode = useCallback((nextValue) => {
+            const resolved = typeof nextValue === 'function'
+                ? Boolean(nextValue(editMode))
+                : Boolean(nextValue);
+            if (typeof setEditing === 'function') {
+                setEditing(resolved);
+            }
+            else {
+                setLocalEditMode(resolved);
+            }
+        }, [editMode, setEditing]);
 
         const refreshMs = useMemo(() => {
             const found = REFRESH_OPTIONS.find((o) => o.value === cfg.refreshInterval);
@@ -273,182 +285,189 @@ window.ReactDashboardClockWidget = (() => {
             </div>
         );
 
-        return (
-            <div className="widget-card">
-                {cfg.showHeader && (
-                    <div className="widget-header">
-                        <span className="widget-title">{cfg.name || 'default'}</span>
-                        <div className="widget-actions">
-                            <button className="btn-zbx" onClick={() => setEditMode((v) => !v)}>
-                                {editMode ? 'Close' : 'Edit'}
-                            </button>
-                            <button className="btn-zbx btn-danger" onClick={remove}>✕</button>
+        const editorContent = (
+            <div className="clock-editor">
+                <div className="editor-title">Clock</div>
+                <div className="editor-grid">
+                    <div className="editor-label">Name</div>
+                    <div className="editor-control">
+                        <input
+                            type="text"
+                            value={cfg.name}
+                            onChange={(e) => updateSettings({ name: e.target.value })}
+                            placeholder="default"
+                        />
+                    </div>
+
+                    <div className="editor-label">Show header</div>
+                    <div className="editor-control">
+                        <label><input type="checkbox" checked={cfg.showHeader} onChange={(e) => updateSettings({ showHeader: e.target.checked })} /> Header</label>
+                    </div>
+
+                    <div className="editor-label">Refresh interval</div>
+                    <div className="editor-control">
+                        <select value={cfg.refreshInterval} onChange={(e) => updateSettings({ refreshInterval: e.target.value })}>
+                            {REFRESH_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                        </select>
+                    </div>
+
+                    <div className="editor-label">Time type</div>
+                    <div className="editor-control">
+                        <select value={cfg.timeType} onChange={(e) => updateSettings({ timeType: e.target.value })}>
+                            <option value="local">Local time</option>
+                            <option value="custom">Custom time zone</option>
+                        </select>
+                    </div>
+
+                    {cfg.timeType === 'custom' && (
+                        <>
+                            <div className="editor-label">Time zone</div>
+                            <div className="editor-control">
+                                <select value={cfg.timezone} onChange={(e) => updateSettings({ timezone: e.target.value })}>
+                                    {TIMEZONE_OPTIONS.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
+                                </select>
+                            </div>
+                        </>
+                    )}
+
+                    <div className="editor-label">Clock type</div>
+                    <div className="editor-control">
+                        <div className="editor-segment">
+                            <button className={cfg.clockType === 'analog' ? 'active' : ''} onClick={() => updateSettings({ clockType: 'analog' })}>Analog</button>
+                            <button className={cfg.clockType === 'digital' ? 'active' : ''} onClick={() => updateSettings({ clockType: 'digital' })}>Digital</button>
                         </div>
                     </div>
-                )}
 
-                <div className="widget-body" ref={bodyRef}>
-                    {!cfg.showHeader && (
-                        <div className="widget-floating-actions">
-                            <button className="btn-zbx" onClick={() => setEditMode((v) => !v)}>
-                                {editMode ? 'Close' : 'Edit'}
-                            </button>
-                            <button className="btn-zbx btn-danger" onClick={remove}>✕</button>
+                    <div className="editor-label">Show</div>
+                    <div className="editor-control editor-checks">
+                        <label>
+                            <input type="checkbox" checked={cfg.showDate} onChange={(e) => setSafeShow('showDate', e.target.checked)} /> Date
+                        </label>
+                        <label>
+                            <input type="checkbox" checked={cfg.showTime} onChange={(e) => setSafeShow('showTime', e.target.checked)} /> Time
+                        </label>
+                        <label>
+                            <input type="checkbox" checked={cfg.showTimezone} onChange={(e) => setSafeShow('showTimezone', e.target.checked)} /> Time zone
+                        </label>
+                    </div>
+                </div>
+
+                <div className="editor-advanced">
+                    <div className="editor-advanced-title">Advanced configuration</div>
+                    <div className="editor-grid">
+                        <div className="editor-label">Background colour</div>
+                        <div className="editor-control">
+                            <div className="editor-segment">
+                                <button className={cfg.background === 'theme' ? 'active' : ''} onClick={() => updateSettings({ background: 'theme' })}>Theme</button>
+                                <button className={cfg.background === 'dark' ? 'active' : ''} onClick={() => updateSettings({ background: 'dark' })}>Dark</button>
+                                <button className={cfg.background === 'custom' ? 'active' : ''} onClick={() => updateSettings({ background: 'custom' })}>Custom</button>
+                            </div>
                         </div>
-                    )}
 
-                    {editMode ? (
-                        <div className="clock-editor">
-                            <div className="editor-title">Clock</div>
-                            <div className="editor-grid">
-                                <div className="editor-label">Name</div>
+                        {cfg.background === 'custom' && (
+                            <>
+                                <div className="editor-label">Custom bg colour</div>
                                 <div className="editor-control">
-                                    <input
-                                        type="text"
-                                        value={cfg.name}
-                                        onChange={(e) => updateSettings({ name: e.target.value })}
-                                        placeholder="default"
-                                    />
+                                    {ColorPickerField ? (
+                                        <ColorPickerField
+                                            value={cfg.backgroundColor || '#1F252B'}
+                                            defaultColor="#1F252B"
+                                            onChange={(nextColor) => updateSettings({ backgroundColor: nextColor })}
+                                        />
+                                    ) : (
+                                        <input
+                                            type="text"
+                                            value={cfg.backgroundColor || '#1F252B'}
+                                            onChange={(e) => updateSettings({ backgroundColor: e.target.value })}
+                                            placeholder="#1F252B"
+                                        />
+                                    )}
                                 </div>
+                            </>
+                        )}
 
-                                <div className="editor-label">Show header</div>
-                                <div className="editor-control">
-                                    <label><input type="checkbox" checked={cfg.showHeader} onChange={(e) => updateSettings({ showHeader: e.target.checked })} /> Header</label>
-                                </div>
+                        <div className="editor-label">Time style</div>
+                        <div className="editor-control editor-checks">
+                            <label>
+                                <input type="checkbox" checked={cfg.timeBold} onChange={(e) => updateSettings({ timeBold: e.target.checked })} /> Bold
+                            </label>
+                            <label>
+                                <input type="checkbox" checked={cfg.showSeconds} onChange={(e) => updateSettings({ showSeconds: e.target.checked })} /> Seconds
+                            </label>
+                        </div>
 
-                                <div className="editor-label">Refresh interval</div>
-                                <div className="editor-control">
-                                    <select value={cfg.refreshInterval} onChange={(e) => updateSettings({ refreshInterval: e.target.value })}>
-                                        {REFRESH_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                                    </select>
-                                </div>
-
-                                <div className="editor-label">Time type</div>
-                                <div className="editor-control">
-                                    <select value={cfg.timeType} onChange={(e) => updateSettings({ timeType: e.target.value })}>
-                                        <option value="local">Local time</option>
-                                        <option value="custom">Custom time zone</option>
-                                    </select>
-                                </div>
-
-                                {cfg.timeType === 'custom' && (
-                                    <>
-                                        <div className="editor-label">Time zone</div>
-                                        <div className="editor-control">
-                                            <select value={cfg.timezone} onChange={(e) => updateSettings({ timezone: e.target.value })}>
-                                                {TIMEZONE_OPTIONS.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
-                                            </select>
-                                        </div>
-                                    </>
-                                )}
-
-                                <div className="editor-label">Clock type</div>
+                        {cfg.clockType === 'digital' && (
+                            <>
+                                <div className="editor-label">Time format</div>
                                 <div className="editor-control">
                                     <div className="editor-segment">
-                                        <button className={cfg.clockType === 'analog' ? 'active' : ''} onClick={() => updateSettings({ clockType: 'analog' })}>Analog</button>
-                                        <button className={cfg.clockType === 'digital' ? 'active' : ''} onClick={() => updateSettings({ clockType: 'digital' })}>Digital</button>
+                                        <button className={cfg.hourFormat === '24' ? 'active' : ''} onClick={() => updateSettings({ hourFormat: '24' })}>24-hour</button>
+                                        <button className={cfg.hourFormat === '12' ? 'active' : ''} onClick={() => updateSettings({ hourFormat: '12' })}>12-hour</button>
                                     </div>
                                 </div>
+                            </>
+                        )}
 
-                                <div className="editor-label">Show</div>
-                                <div className="editor-control editor-checks">
-                                    <label>
-                                        <input type="checkbox" checked={cfg.showDate} onChange={(e) => setSafeShow('showDate', e.target.checked)} /> Date
-                                    </label>
-                                    <label>
-                                        <input type="checkbox" checked={cfg.showTime} onChange={(e) => setSafeShow('showTime', e.target.checked)} /> Time
-                                    </label>
-                                    <label>
-                                        <input type="checkbox" checked={cfg.showTimezone} onChange={(e) => setSafeShow('showTimezone', e.target.checked)} /> Time zone
-                                    </label>
-                                </div>
-                            </div>
-
-                            <div className="editor-advanced">
-                                <div className="editor-advanced-title">Advanced configuration</div>
-                                <div className="editor-grid">
-                                    <div className="editor-label">Background colour</div>
-                                    <div className="editor-control">
-                                        <div className="editor-segment">
-                                            <button className={cfg.background === 'theme' ? 'active' : ''} onClick={() => updateSettings({ background: 'theme' })}>Theme</button>
-                                            <button className={cfg.background === 'dark' ? 'active' : ''} onClick={() => updateSettings({ background: 'dark' })}>Dark</button>
-                                            <button className={cfg.background === 'custom' ? 'active' : ''} onClick={() => updateSettings({ background: 'custom' })}>Custom</button>
-                                        </div>
-                                    </div>
-
-                                    {cfg.background === 'custom' && (
-                                        <>
-                                            <div className="editor-label">Custom bg colour</div>
-                                            <div className="editor-control">
-                                                {ColorPickerField ? (
-                                                    <ColorPickerField
-                                                        value={cfg.backgroundColor || '#1F252B'}
-                                                        defaultColor="#1F252B"
-                                                        onChange={(nextColor) => updateSettings({ backgroundColor: nextColor })}
-                                                    />
-                                                ) : (
-                                                    <input
-                                                        type="text"
-                                                        value={cfg.backgroundColor || '#1F252B'}
-                                                        onChange={(e) => updateSettings({ backgroundColor: e.target.value })}
-                                                        placeholder="#1F252B"
-                                                    />
-                                                )}
-                                            </div>
-                                        </>
-                                    )}
-
-                                    <div className="editor-label">Time style</div>
-                                    <div className="editor-control editor-checks">
-                                        <label>
-                                            <input type="checkbox" checked={cfg.timeBold} onChange={(e) => updateSettings({ timeBold: e.target.checked })} /> Bold
-                                        </label>
-                                        <label>
-                                            <input type="checkbox" checked={cfg.showSeconds} onChange={(e) => updateSettings({ showSeconds: e.target.checked })} /> Seconds
-                                        </label>
-                                    </div>
-
-                                    {cfg.clockType === 'digital' && (
-                                        <>
-                                            <div className="editor-label">Time format</div>
-                                            <div className="editor-control">
-                                                <div className="editor-segment">
-                                                    <button className={cfg.hourFormat === '24' ? 'active' : ''} onClick={() => updateSettings({ hourFormat: '24' })}>24-hour</button>
-                                                    <button className={cfg.hourFormat === '12' ? 'active' : ''} onClick={() => updateSettings({ hourFormat: '12' })}>12-hour</button>
-                                                </div>
-                                            </div>
-                                        </>
-                                    )}
-
-                                    <div className="editor-label">Date size (%)</div>
-                                    <div className="editor-control">
-                                        <input
-                                            type="number"
-                                            min="60"
-                                            max="220"
-                                            value={dateSizeDraft}
-                                            onChange={(e) => setDateSizeDraft(e.target.value)}
-                                            onBlur={commitDateSizeDraft}
-                                            onKeyDown={(e) => {
-                                                if (e.key === 'Enter') {
-                                                    e.preventDefault();
-                                                    commitDateSizeDraft();
-                                                }
-                                            }}
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="editor-footer">
-                                <button className="btn-zbx" onClick={() => setEditMode(false)}>Done</button>
-                            </div>
+                        <div className="editor-label">Date size (%)</div>
+                        <div className="editor-control">
+                            <input
+                                type="number"
+                                min="60"
+                                max="220"
+                                value={dateSizeDraft}
+                                onChange={(e) => setDateSizeDraft(e.target.value)}
+                                onBlur={commitDateSizeDraft}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        commitDateSizeDraft();
+                                    }
+                                }}
+                            />
                         </div>
-                    ) : (
-                        cfg.clockType === 'analog' ? renderAnalog() : renderDigital()
-                    )}
+                    </div>
+                </div>
+
+                <div className="editor-footer">
+                    <button className="btn-zbx" onClick={() => setEditMode(false)}>Done</button>
                 </div>
             </div>
+        );
+
+        const editorPortal = editMode && editorHost && ReactDOM && typeof ReactDOM.createPortal === 'function'
+            ? ReactDOM.createPortal(editorContent, editorHost)
+            : null;
+
+        return (
+            <>
+                {editorPortal}
+                <div className="widget-card">
+                    {cfg.showHeader && (
+                        <div className="widget-header">
+                            <span className="widget-title">{cfg.name || 'default'}</span>
+                            <div className="widget-actions">
+                                <button className="btn-zbx" onClick={() => setEditMode((v) => !v)}>
+                                    {editMode ? 'Close' : 'Edit'}
+                                </button>
+                                <button className="btn-zbx btn-danger" onClick={remove}>✕</button>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="widget-body" ref={bodyRef}>
+                        {!cfg.showHeader && (
+                            <div className="widget-floating-actions">
+                                <button className="btn-zbx" onClick={() => setEditMode((v) => !v)}>
+                                    {editMode ? 'Close' : 'Edit'}
+                                </button>
+                                <button className="btn-zbx btn-danger" onClick={remove}>✕</button>
+                            </div>
+                        )}
+
+                        {cfg.clockType === 'analog' ? renderAnalog() : renderDigital()}
+                    </div>
+                </div>
+            </>
         );
     };
 

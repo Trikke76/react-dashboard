@@ -148,6 +148,81 @@ $page->show();
         flex: 1 1 auto;
     }
 
+    .dashboard-main {
+        display: flex;
+        align-items: stretch;
+        gap: 10px;
+    }
+
+    .dashboard-editor-sidebar {
+        width: min(460px, 42vw);
+        min-width: 360px;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        background: linear-gradient(180deg, rgba(16, 24, 36, 0.96), rgba(12, 18, 28, 0.96));
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .dashboard-editor-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--border-color);
+        background: rgba(20, 30, 43, 0.9);
+    }
+
+    .dashboard-editor-title {
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        color: #dbe6f4;
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .dashboard-editor-host {
+        flex: 1 1 auto;
+        overflow: auto;
+        padding: 8px;
+        min-height: 0;
+    }
+
+    .dashboard-editor-empty {
+        color: var(--subtle-text);
+        font-size: 12px;
+        text-align: center;
+        padding: 16px 10px;
+    }
+
+    .dashboard-editor-host .clock-editor,
+    .dashboard-editor-host .clock-editor--timestate {
+        width: 100%;
+        height: auto;
+        max-height: none;
+        margin: 0;
+    }
+
+    .dashboard-editor-host .ts-editor-drawer {
+        position: static;
+        width: auto;
+        max-width: none;
+        min-height: auto;
+        top: auto;
+        right: auto;
+        bottom: auto;
+        border: 0;
+        background: transparent;
+        padding: 0;
+        box-shadow: none;
+    }
+
     .react-grid-item.react-grid-placeholder {
         background: var(--accent-color-soft);
         border: 1px dashed var(--accent-color);
@@ -362,18 +437,6 @@ $page->show();
         padding: 6px;
         overflow: auto;
         max-height: 100%;
-    }
-
-    .widget-body .clock-editor {
-        position: fixed;
-        right: 8px;
-        top: 84px;
-        bottom: 8px;
-        width: min(460px, 42vw);
-        height: auto;
-        max-height: none;
-        z-index: 260;
-        box-shadow: 0 16px 34px rgba(0, 0, 0, 0.42);
     }
 
     .clock-editor--timestate {
@@ -965,17 +1028,6 @@ $page->show();
         padding: 10px;
     }
 
-    .widget-body .ts-editor-drawer {
-        position: fixed;
-        right: 8px;
-        top: 84px;
-        bottom: 8px;
-        width: min(460px, 42vw);
-        border-radius: 8px;
-        border: 1px solid var(--border-color);
-        box-shadow: 0 16px 34px rgba(0, 0, 0, 0.42);
-    }
-
     .ts-editor-head {
         position: sticky;
         top: 0;
@@ -1469,13 +1521,12 @@ $page->show();
         .editor-grid { grid-template-columns: 1fr; }
         .editor-dataset-grid { grid-template-columns: 1fr; }
         .timestate-row { grid-template-columns: 1fr; gap: 4px; }
-        .widget-body .clock-editor,
-        .widget-body .ts-editor-drawer {
-            left: 6px;
-            right: 6px;
-            width: auto;
-            top: 74px;
-            bottom: 6px;
+        .dashboard-main {
+            flex-direction: column;
+        }
+        .dashboard-editor-sidebar {
+            width: 100%;
+            min-width: 0;
         }
     }
 </style>
@@ -1880,6 +1931,11 @@ if (is_file($timestate_widget_file)) {
         const apiClient = useMemo(() => createDashboardApiClient(window.ZABBIX_CONFIG || {}), []);
         const [globalData, setGlobalData] = useState({ groups: [], refreshedAt: 0 });
         const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
+        const [activeEditorWidgetId, setActiveEditorWidgetId] = useState(null);
+        const [editorHostEl, setEditorHostEl] = useState(null);
+        const setEditorHostRef = useCallback((node) => {
+            setEditorHostEl(node || null);
+        }, []);
         const [layout, setLayout] = useState(() => {
             const fallbackLayout = [
                 mergeWithDefaults({ i: 'w1', x: 0, y: 0, w: 4, h: 8, ...getClockWidgetDefaults() }, 'w1'),
@@ -1958,6 +2014,25 @@ if (is_file($timestate_widget_file)) {
             });
         };
 
+        const setWidgetEditing = useCallback((widgetId, nextOpen) => {
+            setActiveEditorWidgetId((prev) => {
+                if (nextOpen === true) {
+                    return widgetId;
+                }
+                if (nextOpen === false) {
+                    return prev === widgetId ? null : prev;
+                }
+                return prev === widgetId ? null : widgetId;
+            });
+        }, []);
+
+        const activeEditorWidget = useMemo(() => {
+            if (!activeEditorWidgetId) {
+                return null;
+            }
+            return layout.find((w) => w.i === activeEditorWidgetId) || null;
+        }, [layout, activeEditorWidgetId]);
+
         const refreshAllData = useCallback(async () => {
             try {
                 const groups = await apiClient.cachedRequest({ action_type: 'get_groups' }, 60000);
@@ -1976,6 +2051,7 @@ if (is_file($timestate_widget_file)) {
                 const next = prev.filter((w) => w.i !== id);
                 return saveLayoutLocal(next);
             });
+            setActiveEditorWidgetId((prev) => (prev === id ? null : prev));
         };
 
         const addWidget = (type) => {
@@ -2039,6 +2115,7 @@ if (is_file($timestate_widget_file)) {
             const onDocumentKeyDown = (event) => {
                 if (event.key === 'Escape') {
                     setIsAddMenuOpen(false);
+                    setActiveEditorWidgetId(null);
                 }
             };
 
@@ -2049,6 +2126,16 @@ if (is_file($timestate_widget_file)) {
                 document.removeEventListener('keydown', onDocumentKeyDown);
             };
         }, []);
+
+        useEffect(() => {
+            if (!activeEditorWidgetId) {
+                return;
+            }
+            const exists = layout.some((item) => item.i === activeEditorWidgetId);
+            if (!exists) {
+                setActiveEditorWidgetId(null);
+            }
+        }, [layout, activeEditorWidgetId]);
 
         const gridCols = gridWidth >= 1600 ? 36 : (gridWidth >= 1200 ? 24 : 12);
         const refreshedAtLabel = globalData.refreshedAt > 0
@@ -2065,7 +2152,7 @@ if (is_file($timestate_widget_file)) {
         ), [layout, gridCols]);
 
         return (
-            <div className="dashboard-shell" ref={gridWrapRef}>
+            <div className="dashboard-shell">
                 <div className="dashboard-topbar">
                     <div className="dashboard-title-block">
                         <h1 className="dashboard-title">React Dashboard</h1>
@@ -2121,47 +2208,68 @@ if (is_file($timestate_widget_file)) {
                     </div>
                 </div>
 
-                <div className="dashboard-grid-host">
-                    <GridLayout
-                        className="layout"
-                        layout={normalizedLayout}
-                        cols={gridCols}
-                        rowHeight={30}
-                        width={gridWidth}
-                        margin={[7, 7]}
-                        containerPadding={[0, 0]}
-                        compactType={null}
-                        draggableHandle=".widget-header"
-                        onLayoutChange={onLayoutChange}
-                        onDragStop={onDragStop}
-                        onResizeStop={onResizeStop}
-                    >
-                        {layout.map((w) => (
-                            (() => {
-                                let WidgetComponent = window.ClockWidget || window.TimeStateWidget || window.TimeSeriesWidget;
-                                if (w.type === 'TimeState') {
-                                    WidgetComponent = window.TimeStateWidget || WidgetComponent;
-                                }
-                                else if (w.type === 'TimeSeries') {
-                                    WidgetComponent = window.TimeSeriesWidget || WidgetComponent;
-                                }
+                <div className="dashboard-main">
+                    <div className="dashboard-grid-host" ref={gridWrapRef}>
+                        <GridLayout
+                            className="layout"
+                            layout={normalizedLayout}
+                            cols={gridCols}
+                            rowHeight={30}
+                            width={gridWidth}
+                            margin={[7, 7]}
+                            containerPadding={[0, 0]}
+                            compactType={null}
+                            draggableHandle=".widget-header"
+                            onLayoutChange={onLayoutChange}
+                            onDragStop={onDragStop}
+                            onResizeStop={onResizeStop}
+                        >
+                            {layout.map((w) => (
+                                (() => {
+                                    let WidgetComponent = window.ClockWidget || window.TimeStateWidget || window.TimeSeriesWidget;
+                                    if (w.type === 'TimeState') {
+                                        WidgetComponent = window.TimeStateWidget || WidgetComponent;
+                                    }
+                                    else if (w.type === 'TimeSeries') {
+                                        WidgetComponent = window.TimeSeriesWidget || WidgetComponent;
+                                    }
 
-                                return (
-                                    <div key={w.i}>
-                                        <WidgetComponent
-                                            widgetId={w.i}
-                                            settings={w}
-                                            updateSettings={(patch) => updateWidget(w.i, patch)}
-                                            remove={() => removeWidget(w.i)}
-                                            apiClient={apiClient}
-                                            globalData={globalData}
-                                            refreshAllData={refreshAllData}
-                                        />
-                                    </div>
-                                );
-                            })()
-                        ))}
-                    </GridLayout>
+                                    return (
+                                        <div key={w.i}>
+                                            <WidgetComponent
+                                                widgetId={w.i}
+                                                settings={w}
+                                                updateSettings={(patch) => updateWidget(w.i, patch)}
+                                                remove={() => removeWidget(w.i)}
+                                                apiClient={apiClient}
+                                                globalData={globalData}
+                                                refreshAllData={refreshAllData}
+                                                isEditing={activeEditorWidgetId === w.i}
+                                                setEditing={(nextOpen) => setWidgetEditing(w.i, nextOpen)}
+                                                editorHost={editorHostEl}
+                                            />
+                                        </div>
+                                    );
+                                })()
+                            ))}
+                        </GridLayout>
+                    </div>
+
+                    <aside className="dashboard-editor-sidebar">
+                        <div className="dashboard-editor-header">
+                            <div className="dashboard-editor-title">
+                                {activeEditorWidget
+                                    ? `Edit: ${String(activeEditorWidget.name || activeEditorWidget.type || 'Widget')}`
+                                    : 'Widget editor'}
+                            </div>
+                            {activeEditorWidget && (
+                                <button className="btn-zbx" type="button" onClick={() => setActiveEditorWidgetId(null)}>Close</button>
+                            )}
+                        </div>
+                        <div className="dashboard-editor-host" ref={setEditorHostRef}>
+                            {!activeEditorWidget && <div className="dashboard-editor-empty">Select a widget and click Edit.</div>}
+                        </div>
+                    </aside>
                 </div>
             </div>
         );

@@ -370,7 +370,7 @@ window.ReactDashboardTimeSeriesWidget = (() => {
         return nums[lower] + ((nums[upper] - nums[lower]) * weight);
     };
 
-    window.TimeSeriesWidget = ({ remove, settings, updateSettings, apiClient, globalData }) => {
+    window.TimeSeriesWidget = ({ remove, settings, updateSettings, apiClient, globalData, isEditing, setEditing, editorHost }) => {
         const { useState, useEffect, useMemo, useRef, useCallback } = React;
         const ColorPickerField = window.ReactDashboardColorPickerField;
         const HostSelectorField = window.ReactDashboardHostSelectorField;
@@ -380,7 +380,7 @@ window.ReactDashboardTimeSeriesWidget = (() => {
         const svgRef = useRef(null);
         const suggestionTimersRef = useRef(new Map());
 
-        const [editMode, setEditMode] = useState(false);
+        const [localEditMode, setLocalEditMode] = useState(false);
         const [loading, setLoading] = useState(false);
         const [error, setError] = useState('');
         const [hosts, setHosts] = useState([]);
@@ -404,6 +404,18 @@ window.ReactDashboardTimeSeriesWidget = (() => {
         const [hoverState, setHoverState] = useState(null);
         const [dragZoom, setDragZoom] = useState(null);
         const [zoomRange, setZoomRange] = useState(null);
+        const editMode = typeof isEditing === 'boolean' ? isEditing : localEditMode;
+        const setEditMode = useCallback((nextValue) => {
+            const resolved = typeof nextValue === 'function'
+                ? Boolean(nextValue(editMode))
+                : Boolean(nextValue);
+            if (typeof setEditing === 'function') {
+                setEditing(resolved);
+            }
+            else {
+                setLocalEditMode(resolved);
+            }
+        }, [editMode, setEditing]);
 
         const seriesConfig = useMemo(() => parseSeries(cfg.seriesJson), [cfg.seriesJson]);
         const selectedHostIds = useMemo(() => parseIdsCsv(cfg.hostidsCsv), [cfg.hostidsCsv]);
@@ -1369,8 +1381,9 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                         </div>
                     )}
 
-                    {editMode && (
-                        <aside className="ts-editor-drawer">
+                    {editMode && (() => {
+                        const drawer = (
+                            <aside className="ts-editor-drawer">
                             <div className="ts-editor-head">
                                 <strong>Edit Time series</strong>
                                 <button className="btn-zbx" onClick={() => setEditMode(false)}>Done</button>
@@ -1788,8 +1801,13 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                     <div className="editor-control"><label><input type="checkbox" checked={cfg.showHeader} onChange={(e) => updateSettings({ showHeader: e.target.checked })} /> Header</label></div>
                                 </>
                             ))}
-                        </aside>
-                    )}
+                            </aside>
+                        );
+                        if (editorHost && ReactDOM && typeof ReactDOM.createPortal === 'function') {
+                            return ReactDOM.createPortal(drawer, editorHost);
+                        }
+                        return null;
+                    })()}
                 </div>
             </div>
         );
