@@ -145,6 +145,15 @@ window.ReactDashboardTimeSeriesWidget = (() => {
         return value.toFixed(2).replace(/\.00$/, '');
     };
 
+    const parseOptionalNumber = (value) => {
+        const raw = String(value ?? '').trim();
+        if (raw === '') {
+            return null;
+        }
+        const parsed = Number(raw);
+        return Number.isFinite(parsed) ? parsed : null;
+    };
+
     const buildLinePath = (points, scaleX, scaleY) => {
         if (!Array.isArray(points) || points.length === 0) {
             return '';
@@ -389,11 +398,15 @@ window.ReactDashboardTimeSeriesWidget = (() => {
         const allValues = useMemo(() => chartSeries.flatMap((serie) => serie.points.map((p) => Number(p.v)).filter(Number.isFinite)), [chartSeries]);
         const valueMin = allValues.length > 0 ? Math.min(...allValues) : 0;
         const valueMax = allValues.length > 0 ? Math.max(...allValues) : 1;
+        const valueRange = Math.max(0, valueMax - valueMin);
+        const autoPadding = valueRange > 0 ? valueRange * 0.08 : Math.max(1, Math.abs(valueMax || 1) * 0.02);
+        const autoYMin = valueMin - autoPadding;
+        const autoYMax = valueMax + autoPadding;
 
-        const customYMin = Number(cfg.yMin);
-        const customYMax = Number(cfg.yMax);
-        const yMin = Number.isFinite(customYMin) ? customYMin : valueMin;
-        const yMax = Number.isFinite(customYMax) ? customYMax : valueMax;
+        const customYMin = parseOptionalNumber(cfg.yMin);
+        const customYMax = parseOptionalNumber(cfg.yMax);
+        const yMin = customYMin !== null ? customYMin : autoYMin;
+        const yMax = customYMax !== null ? customYMax : autoYMax;
         const safeYMax = yMax <= yMin ? yMin + 1 : yMax;
 
         const timeFrom = Number(model.time_from) || Math.floor(Date.now() / 1000) - (cfg.lookbackHours * 3600);
@@ -513,13 +526,35 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                 const key = String(serie.series_id || serie.itemid || Math.random());
 
                                 if (drawStyle === 'bars') {
+                                    const minSpacing = points.length > 1
+                                        ? points.reduce((acc, point, idx) => {
+                                            if (idx === 0) {
+                                                return acc;
+                                            }
+                                            const spacing = Math.abs(scaleX(point.t) - scaleX(points[idx - 1].t));
+                                            return spacing > 0 ? Math.min(acc, spacing) : acc;
+                                        }, Infinity)
+                                        : 6;
+                                    const barWidth = Math.max(2, Math.min(14, (Number.isFinite(minSpacing) ? minSpacing : 6) * 0.68));
+                                    const baseY = scaleY(Math.max(0, yMin));
                                     return (
                                         <g key={key}>
                                             {points.map((point, idx) => {
                                                 const x = scaleX(point.t);
                                                 const y = scaleY(point.v);
-                                                const h = chartPadding.top + plotHeight - y;
-                                                return <rect key={`${key}-bar-${idx}`} x={x - 1.5} y={y} width={3} height={Math.max(1, h)} fill={color} opacity="0.9" />;
+                                                const rectY = Math.min(y, baseY);
+                                                const h = Math.abs(baseY - y);
+                                                return (
+                                                    <rect
+                                                        key={`${key}-bar-${idx}`}
+                                                        x={x - (barWidth / 2)}
+                                                        y={rectY}
+                                                        width={barWidth}
+                                                        height={Math.max(1, h)}
+                                                        fill={color}
+                                                        opacity="0.82"
+                                                    />
+                                                );
                                             })}
                                         </g>
                                     );
@@ -532,9 +567,20 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                     <g key={key}>
                                         {areaPath !== '' && <path d={areaPath} fill={color} opacity={fillOpacity.toFixed(2)} />}
                                         {drawStyle !== 'points' && <path d={linePath} fill="none" stroke={color} strokeWidth={lineWidth} strokeLinejoin="round" strokeLinecap="round" />}
-                                        {(drawStyle === 'points' || showPoints) && points.map((point, idx) => (
-                                            <circle key={`${key}-pt-${idx}`} cx={scaleX(point.t)} cy={scaleY(point.v)} r={Math.max(2, lineWidth * 0.7)} fill={color} />
-                                        ))}
+                                        {(drawStyle === 'points' || showPoints) && points
+                                            .filter((_, idx) => points.length <= 1200 || idx % Math.ceil(points.length / 1200) === 0)
+                                            .map((point, idx) => (
+                                                <circle
+                                                    key={`${key}-pt-${idx}`}
+                                                    cx={scaleX(point.t)}
+                                                    cy={scaleY(point.v)}
+                                                    r={drawStyle === 'points' ? Math.max(3, lineWidth * 0.9) : Math.max(2.2, lineWidth * 0.75)}
+                                                    fill={color}
+                                                    stroke="rgba(8, 12, 18, 0.9)"
+                                                    strokeWidth="1.2"
+                                                    opacity="0.96"
+                                                />
+                                            ))}
                                     </g>
                                 );
                             })}
