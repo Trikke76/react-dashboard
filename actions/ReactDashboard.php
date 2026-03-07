@@ -1,6 +1,12 @@
 <?php
 namespace Modules\ReactDashboard\Actions;
 
+require_once __DIR__.'/Api/ApiRequest.php';
+require_once __DIR__.'/Api/ApiFilter.php';
+require_once __DIR__.'/Api/HostApiHandler.php';
+require_once __DIR__.'/Api/TimeStateApiHandler.php';
+require_once __DIR__.'/Api/TimeSeriesApiHandler.php';
+
 use API;
 use CController;
 use CControllerResponseData;
