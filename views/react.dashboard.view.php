@@ -850,6 +850,210 @@ $page->show();
         cursor: not-allowed;
     }
 
+    .ts-widget-body {
+        position: relative;
+        overflow: hidden;
+        min-height: 180px;
+    }
+
+    .ts-chart-svg {
+        width: 100%;
+        height: 100%;
+        display: block;
+        background: rgba(9, 14, 22, 0.28);
+    }
+
+    .ts-grid-lines line {
+        stroke: rgba(141, 161, 189, 0.2);
+        stroke-width: 1;
+    }
+
+    .ts-axis-labels text {
+        fill: var(--subtle-text);
+        font-size: 11px;
+        font-weight: 600;
+    }
+
+    .ts-overlay-msg {
+        position: absolute;
+        left: 10px;
+        top: 10px;
+        z-index: 6;
+        background: rgba(10, 16, 25, 0.82);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        padding: 4px 8px;
+        font-size: 12px;
+        color: var(--text-color);
+    }
+
+    .ts-overlay-msg.ts-error {
+        border-color: rgba(198, 72, 72, 0.75);
+        color: #f2b4b4;
+    }
+
+    .ts-legend {
+        position: absolute;
+        left: 8px;
+        right: 8px;
+        bottom: 8px;
+        z-index: 5;
+        border-top: 1px solid var(--border-color);
+        padding-top: 6px;
+    }
+
+    .ts-legend-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    .ts-legend-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--subtle-text);
+    }
+
+    .ts-legend-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        display: inline-block;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .ts-legend-table table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 11px;
+        color: var(--subtle-text);
+    }
+
+    .ts-legend-table th,
+    .ts-legend-table td {
+        border-bottom: 1px solid rgba(135, 156, 183, 0.2);
+        padding: 3px 4px;
+        text-align: left;
+    }
+
+    .ts-editor-drawer {
+        position: absolute;
+        right: 0;
+        top: 0;
+        bottom: 0;
+        width: min(430px, 94%);
+        z-index: 12;
+        border-left: 1px solid var(--border-color);
+        background: linear-gradient(180deg, rgba(16, 24, 36, 0.98), rgba(12, 18, 28, 0.98));
+        overflow: auto;
+        padding: 10px;
+    }
+
+    .ts-editor-head {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: rgba(13, 20, 31, 0.95);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 8px 10px;
+        margin-bottom: 8px;
+    }
+
+    .ts-editor-section {
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        margin-bottom: 8px;
+        overflow: hidden;
+        background: rgba(14, 22, 34, 0.85);
+    }
+
+    .ts-editor-section-toggle {
+        width: 100%;
+        height: 38px;
+        border: 0;
+        border-bottom: 1px solid var(--border-color);
+        background: rgba(19, 29, 43, 0.94);
+        color: #dbe6f4;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0 10px;
+        font-weight: 700;
+        cursor: pointer;
+    }
+
+    .ts-editor-section-body {
+        padding: 8px;
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 6px;
+    }
+
+    .ts-series-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-bottom: 8px;
+    }
+
+    .ts-series-row {
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 8px;
+        background: rgba(11, 18, 29, 0.9);
+    }
+
+    .ts-series-row-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 6px;
+    }
+
+    .ts-series-grid {
+        display: grid;
+        grid-template-columns: 120px 1fr;
+        gap: 6px;
+        margin-bottom: 6px;
+    }
+
+    .ts-suggestions {
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        background: rgba(10, 15, 23, 0.98);
+        max-height: 140px;
+        overflow: auto;
+        margin-bottom: 6px;
+    }
+
+    .ts-suggestion-item {
+        display: block;
+        width: 100%;
+        border: 0;
+        border-bottom: 1px solid rgba(130, 151, 177, 0.12);
+        background: transparent;
+        color: var(--text-color);
+        text-align: left;
+        padding: 6px 8px;
+        font-size: 12px;
+        cursor: pointer;
+    }
+
+    .ts-suggestion-item:hover {
+        background: rgba(48, 86, 131, 0.35);
+    }
+
+    .ts-selected-item {
+        font-size: 12px;
+        color: var(--subtle-text);
+    }
+
     @media (max-width: 760px) {
         .rd-color-popover {
             width: min(94vw, 420px);
@@ -861,6 +1065,15 @@ $page->show();
 
         .rd-color-wheel {
             margin: 0 auto;
+        }
+
+        .ts-editor-drawer {
+            width: 96%;
+            padding: 8px;
+        }
+
+        .ts-series-grid {
+            grid-template-columns: 1fr;
         }
     }
 
@@ -1153,6 +1366,7 @@ $widgets_dir = $data['module_path'] . '/assets/js/widgets';
 $components_dir = $data['module_path'] . '/assets/js/components';
 $color_picker_file = $components_dir . '/ColorPickerField.js';
 $clock_widget_file = $widgets_dir . '/ClockWidget.js';
+$timeseries_widget_file = $widgets_dir . '/TimeSeriesWidget.js';
 $timestate_widget_file = $widgets_dir . '/TimeStateWidget.js';
 
 if (is_file($color_picker_file)) {
@@ -1168,6 +1382,17 @@ if (is_file($color_picker_file)) {
 
 if (is_file($clock_widget_file)) {
     $widget_script = file_get_contents($clock_widget_file);
+    if ($widget_script === false) {
+        $widget_script = '';
+    }
+    $widget_script = preg_replace('~</script~i', '<\\/script', $widget_script);
+    echo '<script type="text/babel" data-presets="react">' . "\n";
+    echo $widget_script;
+    echo "\n</script>\n";
+}
+
+if (is_file($timeseries_widget_file)) {
+    $widget_script = file_get_contents($timeseries_widget_file);
     if ($widget_script === false) {
         $widget_script = '';
     }
@@ -1304,6 +1529,31 @@ if (is_file($timestate_widget_file)) {
         return getClockWidgetDefaults();
     };
 
+    const getTimeSeriesWidgetApi = () => (
+        window.ReactDashboardTimeSeriesWidget && typeof window.ReactDashboardTimeSeriesWidget === 'object'
+            ? window.ReactDashboardTimeSeriesWidget
+            : null
+    );
+
+    const getTimeSeriesWidgetDefaults = () => {
+        const api = getTimeSeriesWidgetApi();
+        if (api && api.DEFAULTS && typeof api.DEFAULTS === 'object') {
+            return { ...api.DEFAULTS, type: 'TimeSeries' };
+        }
+        return { type: 'TimeSeries', name: 'Time series', showHeader: true };
+    };
+
+    const sanitizeTimeSeriesWidgetSettings = (raw) => {
+        const api = getTimeSeriesWidgetApi();
+        if (api && typeof api.sanitizeSettings === 'function') {
+            const sanitized = api.sanitizeSettings(raw);
+            if (sanitized && typeof sanitized === 'object') {
+                return { ...getTimeSeriesWidgetDefaults(), ...sanitized, type: 'TimeSeries' };
+            }
+        }
+        return getTimeSeriesWidgetDefaults();
+    };
+
 
     const TIMESTATE_DEFAULT_WIDGET = {
         type: 'TimeState',
@@ -1331,6 +1581,9 @@ if (is_file($timestate_widget_file)) {
     const widgetDefaultsByType = (type) => {
         if (type === 'TimeState') {
             return TIMESTATE_DEFAULT_WIDGET;
+        }
+        if (type === 'TimeSeries') {
+            return getTimeSeriesWidgetDefaults();
         }
         return getClockWidgetDefaults();
     };
@@ -1386,7 +1639,9 @@ if (is_file($timestate_widget_file)) {
 
     const mergeWithDefaults = (widget, fallbackId) => {
         const source = (widget && typeof widget === 'object') ? widget : {};
-        const type = source.type === 'TimeState' ? 'TimeState' : 'Clock';
+        const type = source.type === 'TimeState'
+            ? 'TimeState'
+            : (source.type === 'TimeSeries' ? 'TimeSeries' : 'Clock');
         const defaults = widgetDefaultsByType(type);
         const base = { ...defaults, ...source, type };
         const safe = {
@@ -1394,8 +1649,8 @@ if (is_file($timestate_widget_file)) {
             i: sanitizeWidgetKey(base.i, fallbackId),
             x: toBoundedInt(base.x, 0, 0, 5000),
             y: toBoundedInt(base.y, 0, 0, 20000),
-            w: toBoundedInt(base.w, type === 'TimeState' ? 8 : 4, 1, 36),
-            h: toBoundedInt(base.h, type === 'TimeState' ? 10 : 8, 1, 200),
+            w: toBoundedInt(base.w, type === 'Clock' ? 4 : 8, 1, 36),
+            h: toBoundedInt(base.h, type === 'Clock' ? 8 : 10, 1, 200),
             name: toText(base.name, defaults.name, 120),
             showHeader: toBoolean(base.showHeader, defaults.showHeader)
         };
@@ -1419,6 +1674,10 @@ if (is_file($timestate_widget_file)) {
             safe.stateMap = toText(base.stateMap, TIMESTATE_DEFAULT_WIDGET.stateMap, 2048);
             safe.datasetsJson = sanitizeDatasetsJson(base.datasetsJson);
             return safe;
+        }
+
+        if (type === 'TimeSeries') {
+            return { ...safe, ...sanitizeTimeSeriesWidgetSettings(base), type: 'TimeSeries' };
         }
 
         return { ...safe, ...sanitizeClockWidgetSettings(base), type: 'Clock' };
@@ -1587,8 +1846,8 @@ if (is_file($timestate_widget_file)) {
                         i: widgetId,
                         x: 0,
                         y: Infinity,
-                        w: type === 'TimeState' ? 8 : 4,
-                        h: type === 'TimeState' ? 10 : 8,
+                        w: type === 'Clock' ? 4 : 8,
+                        h: type === 'Clock' ? 8 : 10,
                         ...defaults
                     }, widgetId)
                 ];
@@ -1704,6 +1963,16 @@ if (is_file($timestate_widget_file)) {
                                 >
                                     Time state widget
                                 </button>
+                                <button
+                                    type="button"
+                                    className="add-widget-item"
+                                    onClick={() => {
+                                        addWidget('TimeSeries');
+                                        setIsAddMenuOpen(false);
+                                    }}
+                                >
+                                    Time series widget
+                                </button>
                             </div>
                         )}
                     </div>
@@ -1726,9 +1995,13 @@ if (is_file($timestate_widget_file)) {
                     >
                         {layout.map((w) => (
                             (() => {
-                                const WidgetComponent = w.type === 'TimeState'
-                                    ? (window.TimeStateWidget || window.ClockWidget)
-                                    : (window.ClockWidget || window.TimeStateWidget);
+                                let WidgetComponent = window.ClockWidget || window.TimeStateWidget || window.TimeSeriesWidget;
+                                if (w.type === 'TimeState') {
+                                    WidgetComponent = window.TimeStateWidget || WidgetComponent;
+                                }
+                                else if (w.type === 'TimeSeries') {
+                                    WidgetComponent = window.TimeSeriesWidget || WidgetComponent;
+                                }
 
                                 return (
                                     <div key={w.i}>
