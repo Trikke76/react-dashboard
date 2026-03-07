@@ -67,17 +67,21 @@ window.ReactDashboardTimeSeriesWidget = (() => {
     const normalizeSeriesRow = (raw, idx) => {
         const source = (raw && typeof raw === 'object') ? raw : {};
         const drawStyle = ['line', 'points', 'bars'].includes(source.drawStyle) ? source.drawStyle : '';
+        const axis = String(source.axis || '').toLowerCase() === 'right' ? 'right' : 'left';
 
         return {
             id: safeSeriesId(source.id, idx),
             label: toText(source.label, '', 120),
             itemid: /^\d+$/.test(String(source.itemid || '').trim()) ? String(source.itemid).trim() : '',
+            hostid: /^\d+$/.test(String(source.hostid || '').trim()) ? String(source.hostid).trim() : '',
             itemName: toText(source.itemName, '', 255),
             itemKey: toText(source.itemKey, '', 255),
             host: toText(source.host, '', 120),
             filterType: source.filterType === 'name' ? 'name' : 'key',
             filterValue: toText(source.filterValue, '', 255),
             color: toHex(source.color, DEFAULT_SERIES_COLORS[idx % DEFAULT_SERIES_COLORS.length]),
+            axis,
+            showInLegend: source.showInLegend !== false,
             drawStyle,
             lineWidth: clampInt(source.lineWidth, 0, 0, 8),
             fillOpacity: clampInt(source.fillOpacity, 0, 0, 100),
@@ -437,9 +441,9 @@ window.ReactDashboardTimeSeriesWidget = (() => {
 
         const fetchSeriesData = useCallback(async () => {
             const activeSeries = seriesConfig.filter((row) => /^\d+$/.test(String(row.itemid || '')));
-            if (activeSeries.length === 0 || selectedHostIds.length === 0) {
+            if (activeSeries.length === 0) {
                 setModel({ series: [], time_from: 0, time_to: 0 });
-                setError('Selecteer host(s) en minstens 1 item.');
+                setError('Selecteer minstens 1 item.');
                 return;
             }
 
@@ -455,7 +459,10 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                         id: row.id,
                         label: row.label,
                         itemid: row.itemid,
+                        hostid: row.hostid || '',
                         color: row.color,
+                        axis: row.axis || 'left',
+                        showInLegend: row.showInLegend !== false ? 1 : 0,
                         drawStyle: row.drawStyle || cfg.drawStyle,
                         lineWidth: row.lineWidth > 0 ? row.lineWidth : cfg.lineWidth,
                         fillOpacity: row.fillOpacity > 0 ? row.fillOpacity : cfg.fillOpacity,
@@ -557,17 +564,21 @@ window.ReactDashboardTimeSeriesWidget = (() => {
 
             const timer = setTimeout(async () => {
                 const filterValue = String(row.filterValue || '').trim();
-                if (filterValue === '' || selectedHostIds.length === 0) {
+                const rowHostId = /^\d+$/.test(String(row.hostid || '').trim()) ? String(row.hostid).trim() : '';
+                const scopedHostIds = rowHostId !== '' ? [rowHostId] : selectedHostIds;
+                if (filterValue === '' || scopedHostIds.length === 0) {
                     setSeriesSuggestions((prev) => ({ ...prev, [row.id]: [] }));
                     return;
                 }
+                const hasWildcard = filterValue.includes('*') || filterValue.includes('?');
+                const suggestionFilter = hasWildcard ? filterValue : `*${filterValue}*`;
 
                 try {
                     const payload = await apiClient.cachedRequest({
                         action_type: 'timestate_items',
-                        hostids_csv: selectedHostIds.join(','),
+                        hostids_csv: scopedHostIds.join(','),
                         filter_mode: row.filterType === 'name' ? 'name' : 'key',
-                        item_filter: filterValue,
+                        item_filter: suggestionFilter,
                         max_rows: '10',
                         filter_exact: '0'
                     }, 4000);
@@ -614,6 +625,8 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                 ...serie,
                 id: String(serie.series_id || serie.itemid || `s_${idx + 1}`),
                 color: String(serie.color || '#5794F2'),
+                axis: String(serie.axis || '').toLowerCase() === 'right' ? 'right' : 'left',
+                show_in_legend: Number(serie.show_in_legend) === 0 ? 0 : 1,
                 points
             };
         }).filter((serie) => serie.points.length > 0), [chartSeries]);
@@ -644,9 +657,14 @@ window.ReactDashboardTimeSeriesWidget = (() => {
             }
         }, [dataTimeFrom, safeDataTimeTo, hasZoom, zoomRange]);
 
-        const visibleValues = useMemo(() => {
+        const hasRightAxis = useMemo(() => preparedSeries.some((serie) => serie.axis === 'right'), [preparedSeries]);
+
+        const leftVisibleValues = useMemo(() => {
             const values = [];
             preparedSeries.forEach((serie) => {
+                if (hasRightAxis && serie.axis === 'right') {
+                    return;
+                }
                 serie.points.forEach((point) => {
                     if (point.t >= viewTimeFrom && point.t <= safeViewTimeTo) {
                         values.push(point.v);
@@ -656,11 +674,37 @@ window.ReactDashboardTimeSeriesWidget = (() => {
             if (values.length > 0) {
                 return values;
             }
-            return preparedSeries.flatMap((serie) => serie.points.map((point) => point.v));
-        }, [preparedSeries, viewTimeFrom, safeViewTimeTo]);
+            const fallback = preparedSeries
+                .filter((serie) => !hasRightAxis || serie.axis !== 'right')
+                .flatMap((serie) => serie.points.map((point) => point.v));
+            return fallback.length > 0 ? fallback : preparedSeries.flatMap((serie) => serie.points.map((point) => point.v));
+        }, [preparedSeries, hasRightAxis, viewTimeFrom, safeViewTimeTo]);
 
-        const valueMin = visibleValues.length > 0 ? Math.min(...visibleValues) : 0;
-        const valueMax = visibleValues.length > 0 ? Math.max(...visibleValues) : 1;
+        const rightVisibleValues = useMemo(() => {
+            if (!hasRightAxis) {
+                return [];
+            }
+            const values = [];
+            preparedSeries.forEach((serie) => {
+                if (serie.axis !== 'right') {
+                    return;
+                }
+                serie.points.forEach((point) => {
+                    if (point.t >= viewTimeFrom && point.t <= safeViewTimeTo) {
+                        values.push(point.v);
+                    }
+                });
+            });
+            if (values.length > 0) {
+                return values;
+            }
+            return preparedSeries
+                .filter((serie) => serie.axis === 'right')
+                .flatMap((serie) => serie.points.map((point) => point.v));
+        }, [preparedSeries, hasRightAxis, viewTimeFrom, safeViewTimeTo]);
+
+        const valueMin = leftVisibleValues.length > 0 ? Math.min(...leftVisibleValues) : 0;
+        const valueMax = leftVisibleValues.length > 0 ? Math.max(...leftVisibleValues) : 1;
         const valueRange = Math.max(0, valueMax - valueMin);
         const autoPadding = valueRange > 0 ? valueRange * 0.08 : Math.max(1, Math.abs(valueMax || 1) * 0.02);
         const autoYMin = valueMin - autoPadding;
@@ -672,13 +716,22 @@ window.ReactDashboardTimeSeriesWidget = (() => {
         const yMax = customYMax !== null ? customYMax : autoYMax;
         const safeYMax = yMax <= yMin ? yMin + 1 : yMax;
 
+        const rightMin = rightVisibleValues.length > 0 ? Math.min(...rightVisibleValues) : yMin;
+        const rightMax = rightVisibleValues.length > 0 ? Math.max(...rightVisibleValues) : safeYMax;
+        const rightRange = Math.max(0, rightMax - rightMin);
+        const rightPadding = rightRange > 0 ? rightRange * 0.08 : Math.max(1, Math.abs(rightMax || 1) * 0.02);
+        const rightYMin = rightMin - rightPadding;
+        const rightYMax = rightMax + rightPadding;
+        const rightSafeYMax = rightYMax <= rightYMin ? rightYMin + 1 : rightYMax;
+
         const legendHeight = cfg.legendMode === 'hidden' ? 0 : (cfg.legendMode === 'table' ? 110 : 46);
-        const chartPadding = { top: 12, right: 12, bottom: 20 + legendHeight, left: 42 };
+        const chartPadding = { top: 12, right: hasRightAxis ? 56 : 12, bottom: 20 + legendHeight, left: 42 };
         const plotWidth = Math.max(120, bodySize.width - chartPadding.left - chartPadding.right);
         const plotHeight = Math.max(90, bodySize.height - chartPadding.top - chartPadding.bottom);
 
         const scaleX = (timestamp) => chartPadding.left + (((Number(timestamp) - viewTimeFrom) / (safeViewTimeTo - viewTimeFrom)) * plotWidth);
         const scaleY = (value) => chartPadding.top + (plotHeight - (((Number(value) - yMin) / (safeYMax - yMin)) * plotHeight));
+        const scaleYRight = (value) => chartPadding.top + (plotHeight - (((Number(value) - rightYMin) / (rightSafeYMax - rightYMin)) * plotHeight));
 
         const yTicks = 5;
         const xTicks = 6;
@@ -706,6 +759,8 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                 return {
                     id: serie.id,
                     color: serie.color,
+                    axis: serie.axis === 'right' ? 'right' : 'left',
+                    showInLegend: Number(serie.show_in_legend) === 0 ? false : true,
                     drawStyle,
                     lineWidth,
                     fillOpacity,
@@ -739,11 +794,14 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                 id: serie.id,
                 label: String(serie.label || serie.name || 'Series'),
                 color: serie.color,
+                axis: serie.axis === 'right' ? 'right' : 'left',
+                showInLegend: Number(serie.show_in_legend) === 0 ? false : true,
                 last,
                 min,
                 max
             };
         }), [preparedSeries, viewTimeFrom, safeViewTimeTo]);
+        const visibleLegendRows = useMemo(() => legendRows.filter((row) => row.showInLegend), [legendRows]);
 
         const percentileLine = useMemo(() => {
             if (cfg.showPercentileLine !== true) {
@@ -1092,6 +1150,15 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                     </text>
                                 );
                             })}
+                            {hasRightAxis && Array.from({ length: yTicks + 1 }).map((_, idx) => {
+                                const y = chartPadding.top + ((plotHeight / yTicks) * idx);
+                                const value = rightSafeYMax - (((rightSafeYMax - rightYMin) / yTicks) * idx);
+                                return (
+                                    <text key={`yr-${idx}`} x={chartPadding.left + plotWidth + 8} y={y + 4} textAnchor="start">
+                                        {formatLegendNumber(value)}
+                                    </text>
+                                );
+                            })}
                             {Array.from({ length: xTicks + 1 }).map((_, idx) => {
                                 const t = viewTimeFrom + (((safeViewTimeTo - viewTimeFrom) / xTicks) * idx);
                                 const label = new Date(t * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -1117,6 +1184,9 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                 const showPoints = serie.showPoints;
                                 const color = serie.color;
                                 const key = serie.id;
+                                const useRightAxis = hasRightAxis && serie.axis === 'right';
+                                const yScale = useRightAxis ? scaleYRight : scaleY;
+                                const axisMin = useRightAxis ? rightYMin : yMin;
 
                                 if (drawStyle === 'bars') {
                                     const minSpacing = points.length > 1
@@ -1129,12 +1199,12 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                         }, Infinity)
                                         : 6;
                                     const barWidth = Math.max(2, Math.min(14, (Number.isFinite(minSpacing) ? minSpacing : 6) * 0.68));
-                                    const baseY = scaleY(Math.max(0, yMin));
+                                    const baseY = yScale(Math.max(0, axisMin));
                                     return (
                                         <g key={key}>
                                             {points.map((point, idx) => {
                                                 const x = scaleX(point.t);
-                                                const y = scaleY(point.v);
+                                                const y = yScale(point.v);
                                                 const rectY = Math.min(y, baseY);
                                                 const h = Math.abs(baseY - y);
                                                 return (
@@ -1153,8 +1223,8 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                     );
                                 }
 
-                                const linePath = buildLinePath(points, scaleX, scaleY);
-                                const areaPath = fillOpacity > 0 ? buildAreaPath(points, scaleX, scaleY, chartPadding.top + plotHeight) : '';
+                                const linePath = buildLinePath(points, scaleX, yScale);
+                                const areaPath = fillOpacity > 0 ? buildAreaPath(points, scaleX, yScale, chartPadding.top + plotHeight) : '';
 
                                 return (
                                     <g key={key}>
@@ -1165,7 +1235,7 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                                 <circle
                                                     key={`${key}-pt-${idx}`}
                                                     cx={scaleX(point.t)}
-                                                    cy={scaleY(point.v)}
+                                                    cy={yScale(point.v)}
                                                     r={drawStyle === 'points' ? Math.max(3, lineWidth * 0.9) : Math.max(2.2, lineWidth * 0.75)}
                                                     fill={color}
                                                     stroke="rgba(8, 12, 18, 0.9)"
@@ -1248,7 +1318,7 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                     {loading && <div className="ts-overlay-msg">Loading...</div>}
                     {!loading && error && <div className="ts-overlay-msg ts-error">{error}</div>}
 
-                    {cfg.legendMode !== 'hidden' && (
+                    {cfg.legendMode !== 'hidden' && (visibleLegendRows.length > 0 || percentileLine) && (
                         <div className={`ts-legend ts-legend-${cfg.legendMode}`}>
                             {cfg.legendMode === 'table' ? (
                                 <table>
@@ -1261,7 +1331,7 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {legendRows.map((row) => (
+                                        {visibleLegendRows.map((row) => (
                                             <tr key={row.id}>
                                                 <td><span className="ts-legend-dot" style={{ background: row.color }} />{row.label}</td>
                                                 <td>{formatLegendNumber(row.min)}</td>
@@ -1280,7 +1350,7 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                 </table>
                             ) : (
                                 <>
-                                    {legendRows.map((row) => (
+                                    {visibleLegendRows.map((row) => (
                                         <div className="ts-legend-chip" key={row.id}>
                                             <span className="ts-legend-dot" style={{ background: row.color }} />
                                             <span>{row.label}</span>
@@ -1393,6 +1463,30 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                                         />
                                                     </div>
 
+                                                    <div className="editor-label">Host scope</div>
+                                                    <div className="editor-control">
+                                                        <select
+                                                            value={row.hostid || ''}
+                                                            onChange={(e) => {
+                                                                const next = {
+                                                                    ...row,
+                                                                    hostid: e.target.value,
+                                                                    itemid: '',
+                                                                    itemName: '',
+                                                                    itemKey: '',
+                                                                    host: ''
+                                                                };
+                                                                upsertSeriesRow(row.id, next);
+                                                                scheduleSuggestions(next);
+                                                            }}
+                                                        >
+                                                            <option value="">Widget hosts</option>
+                                                            {hosts.map((host) => (
+                                                                <option key={`${row.id}-scope-${host.hostid}`} value={host.hostid}>{host.name}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+
                                                     {activeSuggestId === row.id && Array.isArray(seriesSuggestions[row.id]) && seriesSuggestions[row.id].length > 0 && (
                                                         <div className="ts-suggestions">
                                                             {seriesSuggestions[row.id].map((item) => (
@@ -1403,6 +1497,7 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                                                     onClick={() => {
                                                                         upsertSeriesRow(row.id, {
                                                                             itemid: item.itemid,
+                                                                            hostid: item.hostid || row.hostid || '',
                                                                             itemName: item.name,
                                                                             itemKey: item.key_,
                                                                             host: item.host,
@@ -1421,6 +1516,35 @@ window.ReactDashboardTimeSeriesWidget = (() => {
 
                                                     <div className="editor-label">Label</div>
                                                     <div className="editor-control"><input type="text" value={row.label} onChange={(e) => upsertSeriesRow(row.id, { label: e.target.value })} /></div>
+
+                                                    <div className="editor-label">Axis</div>
+                                                    <div className="editor-control">
+                                                        <select value={row.axis || 'left'} onChange={(e) => upsertSeriesRow(row.id, { axis: e.target.value === 'right' ? 'right' : 'left' })}>
+                                                            <option value="left">Left</option>
+                                                            <option value="right">Right</option>
+                                                        </select>
+                                                    </div>
+
+                                                    <div className="editor-label">Display</div>
+                                                    <div className="editor-control">
+                                                        <select value={row.drawStyle || ''} onChange={(e) => upsertSeriesRow(row.id, { drawStyle: e.target.value })}>
+                                                            <option value="">Inherit widget</option>
+                                                            <option value="line">Line</option>
+                                                            <option value="points">Points</option>
+                                                            <option value="bars">Bars</option>
+                                                        </select>
+                                                    </div>
+
+                                                    <div className="editor-label">Legend</div>
+                                                    <div className="editor-control">
+                                                        <label>
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={row.showInLegend !== false}
+                                                                onChange={(e) => upsertSeriesRow(row.id, { showInLegend: e.target.checked })}
+                                                            /> Show in legend
+                                                        </label>
+                                                    </div>
 
                                                     <div className="editor-label">Color</div>
                                                     <div className="editor-control">
