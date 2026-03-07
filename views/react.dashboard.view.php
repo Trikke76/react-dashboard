@@ -647,6 +647,10 @@ $page->show();
         z-index: 220;
     }
 
+    .rd-color-popover-floating {
+        right: auto;
+    }
+
     .rd-color-tabs {
         display: inline-flex;
         gap: 8px;
@@ -676,12 +680,13 @@ $page->show();
         display: grid;
         grid-template-columns: repeat(10, minmax(0, 1fr));
         gap: 8px;
+        justify-items: center;
     }
 
     .rd-color-swatch {
-        width: 100%;
-        aspect-ratio: 1 / 1;
-        border-radius: 999px;
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
         border: 1px solid var(--border-color);
         box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
         cursor: pointer;
@@ -809,13 +814,14 @@ $page->show();
         display: grid;
         grid-template-columns: repeat(6, minmax(0, 1fr));
         gap: 8px;
+        justify-items: center;
     }
 
     .rd-color-harmony-swatch {
-        width: 100%;
-        height: 34px;
+        width: 32px;
+        height: 32px;
         border: 1px solid rgba(255, 255, 255, 0.25);
-        border-radius: 12px;
+        border-radius: 50%;
         cursor: pointer;
         padding: 0;
     }

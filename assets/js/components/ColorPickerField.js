@@ -4,6 +4,9 @@ window.ReactDashboardColorPickerField = ({
     defaultColor = '#607D8B'
 }) => {
     const { useMemo, useState, useEffect, useRef } = React;
+    const createPortal = (typeof ReactDOM !== 'undefined' && typeof ReactDOM.createPortal === 'function')
+        ? ReactDOM.createPortal
+        : null;
 
     const clamp = (num, min, max) => Math.max(min, Math.min(max, num));
     const normalizeHue = (h) => ((Number(h) % 360) + 360) % 360;
@@ -111,6 +114,8 @@ window.ReactDashboardColorPickerField = ({
     };
 
     const rootRef = useRef(null);
+    const triggerRef = useRef(null);
+    const popoverRef = useRef(null);
     const wheelRef = useRef(null);
 
     const normalizedDefault = useMemo(() => normalizeColor(defaultColor, '#607D8B'), [defaultColor]);
@@ -122,6 +127,7 @@ window.ReactDashboardColorPickerField = ({
     const [customHsl, setCustomHsl] = useState(() => rgbToHsl(hexToRgb(normalizedValue)));
     const [harmonyMode, setHarmonyMode] = useState('analog');
     const [isDraggingWheel, setIsDraggingWheel] = useState(false);
+    const [popoverStyle, setPopoverStyle] = useState(null);
 
     useEffect(() => {
         const nextHsl = rgbToHsl(hexToRgb(normalizedValue));
@@ -131,10 +137,10 @@ window.ReactDashboardColorPickerField = ({
 
     useEffect(() => {
         const onDocumentMouseDown = (event) => {
-            if (!rootRef.current) {
-                return;
-            }
-            if (!rootRef.current.contains(event.target)) {
+            const target = event.target;
+            const inRoot = !!(rootRef.current && rootRef.current.contains(target));
+            const inPopover = !!(popoverRef.current && popoverRef.current.contains(target));
+            if (!inRoot && !inPopover) {
                 setIsOpen(false);
                 setIsDraggingWheel(false);
             }
@@ -219,6 +225,56 @@ window.ReactDashboardColorPickerField = ({
         };
     }, [isDraggingWheel, customHsl]);
 
+    useEffect(() => {
+        if (!isOpen || !triggerRef.current) {
+            return;
+        }
+
+        const viewportMargin = 8;
+        const gap = 6;
+        const updatePosition = () => {
+            if (!triggerRef.current) {
+                return;
+            }
+
+            const triggerRect = triggerRef.current.getBoundingClientRect();
+            const popoverWidth = Math.min(420, Math.max(260, window.innerWidth - (viewportMargin * 2)));
+            let left = triggerRect.right - popoverWidth;
+            if (left < viewportMargin) {
+                left = viewportMargin;
+            }
+            if ((left + popoverWidth) > (window.innerWidth - viewportMargin)) {
+                left = window.innerWidth - viewportMargin - popoverWidth;
+            }
+
+            let top = triggerRect.bottom + gap;
+            if (popoverRef.current) {
+                const popoverHeight = popoverRef.current.offsetHeight || 0;
+                const fitsBelow = (top + popoverHeight) <= (window.innerHeight - viewportMargin);
+                if (!fitsBelow) {
+                    const aboveTop = triggerRect.top - gap - popoverHeight;
+                    top = Math.max(viewportMargin, aboveTop);
+                }
+            }
+
+            setPopoverStyle({
+                position: 'fixed',
+                left: `${Math.round(left)}px`,
+                top: `${Math.round(top)}px`,
+                width: `${Math.round(popoverWidth)}px`,
+                zIndex: 5000
+            });
+        };
+
+        updatePosition();
+        window.addEventListener('resize', updatePosition);
+        window.addEventListener('scroll', updatePosition, true);
+        return () => {
+            window.removeEventListener('resize', updatePosition);
+            window.removeEventListener('scroll', updatePosition, true);
+        };
+    }, [isOpen, activeTab]);
+
     const commitCustomHex = () => {
         if (!/^#[0-9A-F]{6}$/.test(String(customHex || '').trim().toUpperCase())) {
             return;
@@ -292,6 +348,155 @@ window.ReactDashboardColorPickerField = ({
     const wheelMarkerY = 50 + (Math.sin(wheelMarkerAngle) * markerRadiusPercent);
     const isCustomValid = /^#[0-9A-F]{6}$/.test(String(customHex || '').trim().toUpperCase());
 
+    const popover = isOpen ? (
+        <div
+            className="rd-color-popover rd-color-popover-floating"
+            role="dialog"
+            aria-label="Color picker"
+            ref={popoverRef}
+            style={{
+                ...(popoverStyle || {}),
+                visibility: popoverStyle ? 'visible' : 'hidden'
+            }}
+        >
+            <div className="rd-color-tabs">
+                <button
+                    type="button"
+                    className={`rd-color-tab ${activeTab === 'colors' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('colors')}
+                >
+                    Colors
+                </button>
+                <button
+                    type="button"
+                    className={`rd-color-tab ${activeTab === 'custom' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('custom')}
+                >
+                    Custom
+                </button>
+            </div>
+
+            {activeTab === 'colors' ? (
+                <div className="rd-color-grid">
+                    {paletteColors.map((color, index) => (
+                        <button
+                            key={`${color}-${index}`}
+                            type="button"
+                            className="rd-color-swatch"
+                            style={{ background: color }}
+                            onClick={() => selectColor(color, true)}
+                        />
+                    ))}
+                </div>
+            ) : (
+                <div className="rd-color-custom">
+                    <div className="rd-color-custom-top">
+                        <input
+                            type="text"
+                            className="rd-color-custom-input"
+                            value={customHex}
+                            onChange={(event) => setCustomHex(event.target.value)}
+                            onBlur={() => {
+                                if (isCustomValid) {
+                                    commitCustomHex();
+                                }
+                            }}
+                            onKeyDown={(event) => {
+                                if (event.key === 'Enter' && isCustomValid) {
+                                    event.preventDefault();
+                                    commitCustomHex();
+                                }
+                            }}
+                            placeholder="#607D8B"
+                            spellCheck={false}
+                            autoComplete="off"
+                        />
+                    </div>
+
+                    <div className="rd-color-section-label">Wheel</div>
+                    <div className="rd-color-wheel-row">
+                        <div
+                            className="rd-color-wheel"
+                            ref={wheelRef}
+                            onMouseDown={(event) => {
+                                event.preventDefault();
+                                applyWheelAt(event.clientX, event.clientY);
+                                setIsDraggingWheel(true);
+                            }}
+                        >
+                            <span
+                                className="rd-color-wheel-marker"
+                                style={{
+                                    left: `${wheelMarkerX}%`,
+                                    top: `${wheelMarkerY}%`,
+                                    background: rgbToHex(hslToRgb(customHsl))
+                                }}
+                            />
+                        </div>
+                        <div className="rd-color-sliders">
+                            <div className="rd-color-slider-row">
+                                <span>S</span>
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max="100"
+                                    value={Math.round(customHsl.s)}
+                                    onChange={(event) => applyHsl({ ...customHsl, s: Number(event.target.value) })}
+                                />
+                            </div>
+                            <div className="rd-color-slider-row">
+                                <span>L</span>
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max="100"
+                                    value={Math.round(customHsl.l)}
+                                    onChange={(event) => applyHsl({ ...customHsl, l: Number(event.target.value) })}
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="rd-color-divider" />
+                    <div className="rd-color-section-label">Harmony</div>
+                    <div className="rd-color-harmony-modes">
+                        {harmonyModes.map((mode) => (
+                            <button
+                                key={mode.id}
+                                type="button"
+                                className={`rd-color-harmony-btn ${harmonyMode === mode.id ? 'active' : ''}`}
+                                onClick={() => setHarmonyMode(mode.id)}
+                            >
+                                {mode.label}
+                            </button>
+                        ))}
+                    </div>
+                    <div className="rd-color-harmony-swatches">
+                        {harmonySwatches.map((swatch, index) => (
+                            <button
+                                key={`${harmonyMode}-${index}-${swatch}`}
+                                type="button"
+                                className="rd-color-harmony-swatch"
+                                style={{ background: swatch }}
+                                onClick={() => selectColor(swatch, false)}
+                            />
+                        ))}
+                    </div>
+
+                    <div className="rd-color-custom-actions">
+                        <button type="button" className="rd-color-reset-btn" onClick={() => selectColor(normalizedValue, false)}>
+                            Reset
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div>
+    ) : null;
+
+    const renderedPopover = (popover && createPortal && typeof document !== 'undefined' && document.body)
+        ? createPortal(popover, document.body)
+        : popover;
+
     return (
         <div className="rd-color-picker" ref={rootRef}>
             <button
@@ -300,145 +505,12 @@ window.ReactDashboardColorPickerField = ({
                 onClick={() => setIsOpen((open) => !open)}
                 aria-haspopup="dialog"
                 aria-expanded={isOpen ? 'true' : 'false'}
+                ref={triggerRef}
             >
                 <span className="rd-color-trigger-swatch" style={{ background: normalizedValue }} />
             </button>
 
-            {isOpen && (
-                <div className="rd-color-popover" role="dialog" aria-label="Color picker">
-                    <div className="rd-color-tabs">
-                        <button
-                            type="button"
-                            className={`rd-color-tab ${activeTab === 'colors' ? 'active' : ''}`}
-                            onClick={() => setActiveTab('colors')}
-                        >
-                            Colors
-                        </button>
-                        <button
-                            type="button"
-                            className={`rd-color-tab ${activeTab === 'custom' ? 'active' : ''}`}
-                            onClick={() => setActiveTab('custom')}
-                        >
-                            Custom
-                        </button>
-                    </div>
-
-                    {activeTab === 'colors' ? (
-                        <div className="rd-color-grid">
-                            {paletteColors.map((color, index) => (
-                                <button
-                                    key={`${color}-${index}`}
-                                    type="button"
-                                    className="rd-color-swatch"
-                                    style={{ background: color }}
-                                    onClick={() => selectColor(color, true)}
-                                />
-                            ))}
-                        </div>
-                    ) : (
-                        <div className="rd-color-custom">
-                            <div className="rd-color-custom-top">
-                                <input
-                                    type="text"
-                                    className="rd-color-custom-input"
-                                    value={customHex}
-                                    onChange={(event) => setCustomHex(event.target.value)}
-                                    onBlur={() => {
-                                        if (isCustomValid) {
-                                            commitCustomHex();
-                                        }
-                                    }}
-                                    onKeyDown={(event) => {
-                                        if (event.key === 'Enter' && isCustomValid) {
-                                            event.preventDefault();
-                                            commitCustomHex();
-                                        }
-                                    }}
-                                    placeholder="#607D8B"
-                                    spellCheck={false}
-                                    autoComplete="off"
-                                />
-                            </div>
-
-                            <div className="rd-color-section-label">Wheel</div>
-                            <div className="rd-color-wheel-row">
-                                <div
-                                    className="rd-color-wheel"
-                                    ref={wheelRef}
-                                    onMouseDown={(event) => {
-                                        event.preventDefault();
-                                        applyWheelAt(event.clientX, event.clientY);
-                                        setIsDraggingWheel(true);
-                                    }}
-                                >
-                                    <span
-                                        className="rd-color-wheel-marker"
-                                        style={{
-                                            left: `${wheelMarkerX}%`,
-                                            top: `${wheelMarkerY}%`,
-                                            background: rgbToHex(hslToRgb(customHsl))
-                                        }}
-                                    />
-                                </div>
-                                <div className="rd-color-sliders">
-                                    <div className="rd-color-slider-row">
-                                        <span>S</span>
-                                        <input
-                                            type="range"
-                                            min="0"
-                                            max="100"
-                                            value={Math.round(customHsl.s)}
-                                            onChange={(event) => applyHsl({ ...customHsl, s: Number(event.target.value) })}
-                                        />
-                                    </div>
-                                    <div className="rd-color-slider-row">
-                                        <span>L</span>
-                                        <input
-                                            type="range"
-                                            min="0"
-                                            max="100"
-                                            value={Math.round(customHsl.l)}
-                                            onChange={(event) => applyHsl({ ...customHsl, l: Number(event.target.value) })}
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="rd-color-divider" />
-                            <div className="rd-color-section-label">Harmony</div>
-                            <div className="rd-color-harmony-modes">
-                                {harmonyModes.map((mode) => (
-                                    <button
-                                        key={mode.id}
-                                        type="button"
-                                        className={`rd-color-harmony-btn ${harmonyMode === mode.id ? 'active' : ''}`}
-                                        onClick={() => setHarmonyMode(mode.id)}
-                                    >
-                                        {mode.label}
-                                    </button>
-                                ))}
-                            </div>
-                            <div className="rd-color-harmony-swatches">
-                                {harmonySwatches.map((swatch, index) => (
-                                    <button
-                                        key={`${harmonyMode}-${index}-${swatch}`}
-                                        type="button"
-                                        className="rd-color-harmony-swatch"
-                                        style={{ background: swatch }}
-                                        onClick={() => selectColor(swatch, false)}
-                                    />
-                                ))}
-                            </div>
-
-                            <div className="rd-color-custom-actions">
-                                <button type="button" className="rd-color-reset-btn" onClick={() => selectColor(normalizedValue, false)}>
-                                    Reset
-                                </button>
-                            </div>
-                        </div>
-                    )}
-                </div>
-            )}
+            {renderedPopover}
         </div>
     );
 };
