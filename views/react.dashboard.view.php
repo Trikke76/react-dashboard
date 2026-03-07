@@ -1016,6 +1016,27 @@ $page->show();
         margin-bottom: 6px;
     }
 
+    .ts-series-subsection {
+        border: 1px solid rgba(132, 156, 186, 0.2);
+        border-radius: 7px;
+        padding: 6px;
+        margin-bottom: 7px;
+        background: rgba(12, 20, 32, 0.72);
+    }
+
+    .ts-series-subsection:last-child {
+        margin-bottom: 0;
+    }
+
+    .ts-series-subtitle {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        color: #c9d8ea;
+        margin-bottom: 6px;
+        text-transform: uppercase;
+    }
+
     .ts-series-grid {
         display: grid;
         grid-template-columns: 120px 1fr;

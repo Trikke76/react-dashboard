@@ -1430,134 +1430,157 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                                         <button className="btn-zbx btn-danger" onClick={() => removeSeriesRow(row.id)}>✕</button>
                                                     </div>
 
-                                                    <div className="ts-series-grid">
-                                                        <select
-                                                            value={row.filterType}
-                                                            onChange={(e) => {
-                                                                const next = { ...row, filterType: e.target.value, itemid: '', itemName: '', itemKey: '' };
-                                                                upsertSeriesRow(row.id, next);
-                                                                scheduleSuggestions(next);
-                                                            }}
-                                                        >
-                                                            <option value="key">Item key</option>
-                                                            <option value="name">Item name</option>
-                                                        </select>
+                                                    <div className="ts-series-subsection">
+                                                        <div className="ts-series-subtitle">Host selector / item</div>
+                                                        <div className="ts-series-grid">
+                                                            <select
+                                                                value={row.filterType}
+                                                                onChange={(e) => {
+                                                                    const next = { ...row, filterType: e.target.value, itemid: '', itemName: '', itemKey: '' };
+                                                                    upsertSeriesRow(row.id, next);
+                                                                    scheduleSuggestions(next);
+                                                                }}
+                                                            >
+                                                                <option value="key">Item key</option>
+                                                                <option value="name">Item name</option>
+                                                            </select>
 
-                                                        <input
-                                                            type="text"
-                                                            value={row.filterValue}
-                                                            placeholder="Search item..."
-                                                            onFocus={() => setActiveSuggestId(row.id)}
-                                                            onChange={(e) => {
-                                                                const next = {
-                                                                    ...row,
-                                                                    filterValue: e.target.value,
-                                                                    itemid: '',
-                                                                    itemName: '',
-                                                                    itemKey: '',
-                                                                    host: ''
-                                                                };
-                                                                upsertSeriesRow(row.id, next);
-                                                                scheduleSuggestions(next);
-                                                            }}
-                                                        />
-                                                    </div>
-
-                                                    <div className="editor-label">Host scope</div>
-                                                    <div className="editor-control">
-                                                        <select
-                                                            value={row.hostid || ''}
-                                                            onChange={(e) => {
-                                                                const next = {
-                                                                    ...row,
-                                                                    hostid: e.target.value,
-                                                                    itemid: '',
-                                                                    itemName: '',
-                                                                    itemKey: '',
-                                                                    host: ''
-                                                                };
-                                                                upsertSeriesRow(row.id, next);
-                                                                scheduleSuggestions(next);
-                                                            }}
-                                                        >
-                                                            <option value="">Widget hosts</option>
-                                                            {hosts.map((host) => (
-                                                                <option key={`${row.id}-scope-${host.hostid}`} value={host.hostid}>{host.name}</option>
-                                                            ))}
-                                                        </select>
-                                                    </div>
-
-                                                    {activeSuggestId === row.id && Array.isArray(seriesSuggestions[row.id]) && seriesSuggestions[row.id].length > 0 && (
-                                                        <div className="ts-suggestions">
-                                                            {seriesSuggestions[row.id].map((item) => (
-                                                                <button
-                                                                    key={`${row.id}-${item.itemid}`}
-                                                                    type="button"
-                                                                    className="ts-suggestion-item"
-                                                                    onClick={() => {
-                                                                        upsertSeriesRow(row.id, {
-                                                                            itemid: item.itemid,
-                                                                            hostid: item.hostid || row.hostid || '',
-                                                                            itemName: item.name,
-                                                                            itemKey: item.key_,
-                                                                            host: item.host,
-                                                                            filterValue: row.filterType === 'name' ? item.name : item.key_,
-                                                                            label: row.label || `${item.host} :: ${item.name}`
-                                                                        });
-                                                                        setSeriesSuggestions((prev) => ({ ...prev, [row.id]: [] }));
-                                                                        setActiveSuggestId('');
-                                                                    }}
-                                                                >
-                                                                    {item.label}
-                                                                </button>
-                                                            ))}
-                                                        </div>
-                                                    )}
-
-                                                    <div className="editor-label">Label</div>
-                                                    <div className="editor-control"><input type="text" value={row.label} onChange={(e) => upsertSeriesRow(row.id, { label: e.target.value })} /></div>
-
-                                                    <div className="editor-label">Axis</div>
-                                                    <div className="editor-control">
-                                                        <select value={row.axis || 'left'} onChange={(e) => upsertSeriesRow(row.id, { axis: e.target.value === 'right' ? 'right' : 'left' })}>
-                                                            <option value="left">Left</option>
-                                                            <option value="right">Right</option>
-                                                        </select>
-                                                    </div>
-
-                                                    <div className="editor-label">Display</div>
-                                                    <div className="editor-control">
-                                                        <select value={row.drawStyle || ''} onChange={(e) => upsertSeriesRow(row.id, { drawStyle: e.target.value })}>
-                                                            <option value="">Inherit widget</option>
-                                                            <option value="line">Line</option>
-                                                            <option value="points">Points</option>
-                                                            <option value="bars">Bars</option>
-                                                        </select>
-                                                    </div>
-
-                                                    <div className="editor-label">Legend</div>
-                                                    <div className="editor-control">
-                                                        <label>
                                                             <input
-                                                                type="checkbox"
-                                                                checked={row.showInLegend !== false}
-                                                                onChange={(e) => upsertSeriesRow(row.id, { showInLegend: e.target.checked })}
-                                                            /> Show in legend
-                                                        </label>
-                                                    </div>
+                                                                type="text"
+                                                                value={row.filterValue}
+                                                                placeholder="Search item..."
+                                                                onFocus={() => setActiveSuggestId(row.id)}
+                                                                onChange={(e) => {
+                                                                    const next = {
+                                                                        ...row,
+                                                                        filterValue: e.target.value,
+                                                                        itemid: '',
+                                                                        itemName: '',
+                                                                        itemKey: '',
+                                                                        host: ''
+                                                                    };
+                                                                    upsertSeriesRow(row.id, next);
+                                                                    scheduleSuggestions(next);
+                                                                }}
+                                                            />
+                                                        </div>
 
-                                                    <div className="editor-label">Color</div>
-                                                    <div className="editor-control">
-                                                        {ColorPickerField ? (
-                                                            <ColorPickerField value={row.color} defaultColor={DEFAULT_SERIES_COLORS[idx % DEFAULT_SERIES_COLORS.length]} onChange={(nextColor) => upsertSeriesRow(row.id, { color: nextColor })} />
-                                                        ) : (
-                                                            <input type="text" value={row.color} onChange={(e) => upsertSeriesRow(row.id, { color: e.target.value })} />
+                                                        <div className="editor-label">Host scope</div>
+                                                        <div className="editor-control">
+                                                            <select
+                                                                value={row.hostid || ''}
+                                                                onChange={(e) => {
+                                                                    const next = {
+                                                                        ...row,
+                                                                        hostid: e.target.value,
+                                                                        itemid: '',
+                                                                        itemName: '',
+                                                                        itemKey: '',
+                                                                        host: ''
+                                                                    };
+                                                                    upsertSeriesRow(row.id, next);
+                                                                    scheduleSuggestions(next);
+                                                                }}
+                                                            >
+                                                                <option value="">Widget hosts</option>
+                                                                {hosts.map((host) => (
+                                                                    <option key={`${row.id}-scope-${host.hostid}`} value={host.hostid}>{host.name}</option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
+
+                                                        {activeSuggestId === row.id && Array.isArray(seriesSuggestions[row.id]) && seriesSuggestions[row.id].length > 0 && (
+                                                            <div className="ts-suggestions">
+                                                                {seriesSuggestions[row.id].map((item) => (
+                                                                    <button
+                                                                        key={`${row.id}-${item.itemid}`}
+                                                                        type="button"
+                                                                        className="ts-suggestion-item"
+                                                                        onClick={() => {
+                                                                            upsertSeriesRow(row.id, {
+                                                                                itemid: item.itemid,
+                                                                                hostid: item.hostid || row.hostid || '',
+                                                                                itemName: item.name,
+                                                                                itemKey: item.key_,
+                                                                                host: item.host,
+                                                                                filterValue: row.filterType === 'name' ? item.name : item.key_,
+                                                                                label: row.label || `${item.host} :: ${item.name}`
+                                                                            });
+                                                                            setSeriesSuggestions((prev) => ({ ...prev, [row.id]: [] }));
+                                                                            setActiveSuggestId('');
+                                                                        }}
+                                                                    >
+                                                                        {item.label}
+                                                                    </button>
+                                                                ))}
+                                                            </div>
                                                         )}
+
+                                                        <div className="editor-label">Selected item</div>
+                                                        <div className="editor-control ts-selected-item">
+                                                            {row.itemid ? `${row.host} :: ${row.itemName} [${row.itemKey}]` : 'No item selected'}
+                                                        </div>
                                                     </div>
 
-                                                    <div className="editor-label">Selected item</div>
-                                                    <div className="editor-control ts-selected-item">
-                                                        {row.itemid ? `${row.host} :: ${row.itemName} [${row.itemKey}]` : 'No item selected'}
+                                                    <div className="ts-series-subsection">
+                                                        <div className="ts-series-subtitle">Display options</div>
+                                                        <div className="editor-label">Draw style</div>
+                                                        <div className="editor-control">
+                                                            <select value={row.drawStyle || ''} onChange={(e) => upsertSeriesRow(row.id, { drawStyle: e.target.value })}>
+                                                                <option value="">Inherit widget</option>
+                                                                <option value="line">Line</option>
+                                                                <option value="points">Points</option>
+                                                                <option value="bars">Bars</option>
+                                                            </select>
+                                                        </div>
+
+                                                        <div className="editor-label">Color</div>
+                                                        <div className="editor-control">
+                                                            {ColorPickerField ? (
+                                                                <ColorPickerField value={row.color} defaultColor={DEFAULT_SERIES_COLORS[idx % DEFAULT_SERIES_COLORS.length]} onChange={(nextColor) => upsertSeriesRow(row.id, { color: nextColor })} />
+                                                            ) : (
+                                                                <input type="text" value={row.color} onChange={(e) => upsertSeriesRow(row.id, { color: e.target.value })} />
+                                                            )}
+                                                        </div>
+
+                                                        <div className="editor-label">Show points</div>
+                                                        <div className="editor-control">
+                                                            <label>
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={row.showPoints === true}
+                                                                    onChange={(e) => upsertSeriesRow(row.id, { showPoints: e.target.checked })}
+                                                                /> Force points for this series
+                                                            </label>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="ts-series-subsection">
+                                                        <div className="ts-series-subtitle">Axis options</div>
+                                                        <div className="editor-label">Axis</div>
+                                                        <div className="editor-control">
+                                                            <select value={row.axis || 'left'} onChange={(e) => upsertSeriesRow(row.id, { axis: e.target.value === 'right' ? 'right' : 'left' })}>
+                                                                <option value="left">Left</option>
+                                                                <option value="right">Right</option>
+                                                            </select>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="ts-series-subsection">
+                                                        <div className="ts-series-subtitle">Legend options</div>
+                                                        <div className="editor-label">Display label</div>
+                                                        <div className="editor-control"><input type="text" value={row.label} onChange={(e) => upsertSeriesRow(row.id, { label: e.target.value })} /></div>
+
+                                                        <div className="editor-label">Show in legend</div>
+                                                        <div className="editor-control">
+                                                            <label>
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={row.showInLegend !== false}
+                                                                    onChange={(e) => upsertSeriesRow(row.id, { showInLegend: e.target.checked })}
+                                                                /> Enabled
+                                                            </label>
+                                                        </div>
                                                     </div>
                                                 </div>
                                             ))}
@@ -1567,7 +1590,7 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                 </>
                             ))}
 
-                            {renderEditorSection('display', 'Display', (
+                            {renderEditorSection('display', 'Display defaults', (
                                 <>
                                     <div className="editor-label">Draw style</div>
                                     <div className="editor-control">
@@ -1652,7 +1675,7 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                 </>
                             ))}
 
-                            {renderEditorSection('axis', 'Axis', (
+                            {renderEditorSection('axis', 'Axis & range', (
                                 <>
                                     <div className="editor-label">Lookback (hours)</div>
                                     <div className="editor-control">
@@ -1698,7 +1721,7 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                 </>
                             ))}
 
-                            {renderEditorSection('legend', 'Legend', (
+                            {renderEditorSection('legend', 'Panel legend', (
                                 <>
                                     <div className="editor-label">Legend mode</div>
                                     <div className="editor-control">
