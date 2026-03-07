@@ -1553,6 +1553,40 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                                                 /> Force points for this series
                                                             </label>
                                                         </div>
+
+                                                        <div className="editor-label">Line width</div>
+                                                        <div className="editor-control">
+                                                            <input
+                                                                type="number"
+                                                                min="0"
+                                                                max="8"
+                                                                value={Number(row.lineWidth || 0)}
+                                                                onChange={(e) => {
+                                                                    const raw = String(e.target.value || '').trim();
+                                                                    const parsed = Number(raw);
+                                                                    const next = Number.isFinite(parsed) ? clampInt(parsed, 0, 0, 8) : 0;
+                                                                    upsertSeriesRow(row.id, { lineWidth: next });
+                                                                }}
+                                                            />
+                                                            <div className="editor-subtle">0 = inherit panel default</div>
+                                                        </div>
+
+                                                        <div className="editor-label">Fill opacity (%)</div>
+                                                        <div className="editor-control">
+                                                            <input
+                                                                type="number"
+                                                                min="0"
+                                                                max="100"
+                                                                value={Number(row.fillOpacity || 0)}
+                                                                onChange={(e) => {
+                                                                    const raw = String(e.target.value || '').trim();
+                                                                    const parsed = Number(raw);
+                                                                    const next = Number.isFinite(parsed) ? clampInt(parsed, 0, 0, 100) : 0;
+                                                                    upsertSeriesRow(row.id, { fillOpacity: next });
+                                                                }}
+                                                            />
+                                                            <div className="editor-subtle">0 = inherit panel default</div>
+                                                        </div>
                                                     </div>
 
                                                     <div className="ts-series-subsection">

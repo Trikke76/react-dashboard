@@ -144,6 +144,8 @@ $page->show();
         border-radius: 0;
         background: transparent;
         padding: 0;
+        min-width: 0;
+        flex: 1 1 auto;
     }
 
     .react-grid-item.react-grid-placeholder {
@@ -360,6 +362,18 @@ $page->show();
         padding: 6px;
         overflow: auto;
         max-height: 100%;
+    }
+
+    .widget-body .clock-editor {
+        position: fixed;
+        right: 8px;
+        top: 84px;
+        bottom: 8px;
+        width: min(460px, 42vw);
+        height: auto;
+        max-height: none;
+        z-index: 260;
+        box-shadow: 0 16px 34px rgba(0, 0, 0, 0.42);
     }
 
     .clock-editor--timestate {
@@ -951,6 +965,17 @@ $page->show();
         padding: 10px;
     }
 
+    .widget-body .ts-editor-drawer {
+        position: fixed;
+        right: 8px;
+        top: 84px;
+        bottom: 8px;
+        width: min(460px, 42vw);
+        border-radius: 8px;
+        border: 1px solid var(--border-color);
+        box-shadow: 0 16px 34px rgba(0, 0, 0, 0.42);
+    }
+
     .ts-editor-head {
         position: sticky;
         top: 0;
@@ -1444,6 +1469,14 @@ $page->show();
         .editor-grid { grid-template-columns: 1fr; }
         .editor-dataset-grid { grid-template-columns: 1fr; }
         .timestate-row { grid-template-columns: 1fr; gap: 4px; }
+        .widget-body .clock-editor,
+        .widget-body .ts-editor-drawer {
+            left: 6px;
+            right: 6px;
+            width: auto;
+            top: 74px;
+            bottom: 6px;
+        }
     }
 </style>
 
