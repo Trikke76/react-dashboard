@@ -386,6 +386,7 @@ window.ReactDashboardTimeSeriesWidget = (() => {
         const [hosts, setHosts] = useState([]);
         const [hostsLoading, setHostsLoading] = useState(false);
         const [seriesSuggestions, setSeriesSuggestions] = useState({});
+        const [seriesSectionCollapsed, setSeriesSectionCollapsed] = useState({});
         const [activeSuggestId, setActiveSuggestId] = useState('');
         const [panelCollapsed, setPanelCollapsed] = useState({
             query: false,
@@ -449,7 +450,39 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                 delete copy[rowId];
                 return copy;
             });
+            setSeriesSectionCollapsed((prev) => {
+                if (!(rowId in prev)) {
+                    return prev;
+                }
+                const copy = { ...prev };
+                delete copy[rowId];
+                return copy;
+            });
         };
+
+        const isSeriesSectionClosed = useCallback((rowId, sectionKey) => {
+            const rowState = seriesSectionCollapsed[rowId];
+            if (rowState && Object.prototype.hasOwnProperty.call(rowState, sectionKey)) {
+                return rowState[sectionKey] === true;
+            }
+            return true;
+        }, [seriesSectionCollapsed]);
+
+        const toggleSeriesSection = useCallback((rowId, sectionKey) => {
+            setSeriesSectionCollapsed((prev) => {
+                const rowState = prev[rowId] || {};
+                const isClosed = Object.prototype.hasOwnProperty.call(rowState, sectionKey)
+                    ? rowState[sectionKey] === true
+                    : true;
+                return {
+                    ...prev,
+                    [rowId]: {
+                        ...rowState,
+                        [sectionKey]: !isClosed
+                    }
+                };
+            });
+        }, []);
 
         const fetchSeriesData = useCallback(async () => {
             const activeSeries = seriesConfig.filter((row) => /^\d+$/.test(String(row.itemid || '')));
@@ -1113,6 +1146,23 @@ window.ReactDashboardTimeSeriesWidget = (() => {
             </section>
         );
 
+        const renderSeriesSection = (rowId, sectionKey, title, body) => {
+            const isClosed = isSeriesSectionClosed(rowId, sectionKey);
+            return (
+                <div className="ts-series-subsection" key={`${rowId}-${sectionKey}`}>
+                    <button
+                        type="button"
+                        className="ts-series-subtitle-toggle"
+                        onClick={() => toggleSeriesSection(rowId, sectionKey)}
+                    >
+                        <span className="ts-series-subtitle">{title}</span>
+                        <span className="ts-series-subtitle-icon">{isClosed ? '▸' : '▾'}</span>
+                    </button>
+                    {!isClosed && <div className="ts-series-subsection-body">{body}</div>}
+                </div>
+            );
+        };
+
         return (
             <div className="widget-card">
                 {cfg.showHeader && (
@@ -1443,7 +1493,7 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                                         <button className="btn-zbx btn-danger" onClick={() => removeSeriesRow(row.id)}>✕</button>
                                                     </div>
 
-                                                    <div className="ts-series-subsection">
+                                                    <div className="ts-series-subsection ts-series-subsection--open">
                                                         <div className="ts-series-subtitle">Host selector / item</div>
                                                         <div className="ts-series-grid">
                                                             <select
@@ -1535,100 +1585,103 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                                         </div>
                                                     </div>
 
-                                                    <div className="ts-series-subsection">
-                                                        <div className="ts-series-subtitle">Display options</div>
-                                                        <div className="editor-label">Draw style</div>
-                                                        <div className="editor-control">
-                                                            <select value={row.drawStyle || ''} onChange={(e) => upsertSeriesRow(row.id, { drawStyle: e.target.value })}>
-                                                                <option value="">Inherit widget</option>
-                                                                <option value="line">Line</option>
-                                                                <option value="points">Points</option>
-                                                                <option value="bars">Bars</option>
-                                                            </select>
-                                                        </div>
+                                                    {renderSeriesSection(row.id, 'display', 'Display options', (
+                                                        <>
+                                                            <div className="editor-label">Draw style</div>
+                                                            <div className="editor-control">
+                                                                <select value={row.drawStyle || ''} onChange={(e) => upsertSeriesRow(row.id, { drawStyle: e.target.value })}>
+                                                                    <option value="">Inherit widget</option>
+                                                                    <option value="line">Line</option>
+                                                                    <option value="points">Points</option>
+                                                                    <option value="bars">Bars</option>
+                                                                </select>
+                                                            </div>
 
-                                                        <div className="editor-label">Color</div>
-                                                        <div className="editor-control">
-                                                            {ColorPickerField ? (
-                                                                <ColorPickerField value={row.color} defaultColor={DEFAULT_SERIES_COLORS[idx % DEFAULT_SERIES_COLORS.length]} onChange={(nextColor) => upsertSeriesRow(row.id, { color: nextColor })} />
-                                                            ) : (
-                                                                <input type="text" value={row.color} onChange={(e) => upsertSeriesRow(row.id, { color: e.target.value })} />
-                                                            )}
-                                                        </div>
+                                                            <div className="editor-label">Color</div>
+                                                            <div className="editor-control">
+                                                                {ColorPickerField ? (
+                                                                    <ColorPickerField value={row.color} defaultColor={DEFAULT_SERIES_COLORS[idx % DEFAULT_SERIES_COLORS.length]} onChange={(nextColor) => upsertSeriesRow(row.id, { color: nextColor })} />
+                                                                ) : (
+                                                                    <input type="text" value={row.color} onChange={(e) => upsertSeriesRow(row.id, { color: e.target.value })} />
+                                                                )}
+                                                            </div>
 
-                                                        <div className="editor-label">Show points</div>
-                                                        <div className="editor-control">
-                                                            <label>
+                                                            <div className="editor-label">Show points</div>
+                                                            <div className="editor-control">
+                                                                <label>
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={row.showPoints === true}
+                                                                        onChange={(e) => upsertSeriesRow(row.id, { showPoints: e.target.checked })}
+                                                                    /> Force points for this series
+                                                                </label>
+                                                            </div>
+
+                                                            <div className="editor-label">Line width</div>
+                                                            <div className="editor-control">
                                                                 <input
-                                                                    type="checkbox"
-                                                                    checked={row.showPoints === true}
-                                                                    onChange={(e) => upsertSeriesRow(row.id, { showPoints: e.target.checked })}
-                                                                /> Force points for this series
-                                                            </label>
-                                                        </div>
+                                                                    type="number"
+                                                                    min="0"
+                                                                    max="8"
+                                                                    value={Number(row.lineWidth || 0)}
+                                                                    onChange={(e) => {
+                                                                        const raw = String(e.target.value || '').trim();
+                                                                        const parsed = Number(raw);
+                                                                        const next = Number.isFinite(parsed) ? clampInt(parsed, 0, 0, 8) : 0;
+                                                                        upsertSeriesRow(row.id, { lineWidth: next });
+                                                                    }}
+                                                                />
+                                                                <div className="editor-subtle">0 = inherit panel default</div>
+                                                            </div>
 
-                                                        <div className="editor-label">Line width</div>
-                                                        <div className="editor-control">
-                                                            <input
-                                                                type="number"
-                                                                min="0"
-                                                                max="8"
-                                                                value={Number(row.lineWidth || 0)}
-                                                                onChange={(e) => {
-                                                                    const raw = String(e.target.value || '').trim();
-                                                                    const parsed = Number(raw);
-                                                                    const next = Number.isFinite(parsed) ? clampInt(parsed, 0, 0, 8) : 0;
-                                                                    upsertSeriesRow(row.id, { lineWidth: next });
-                                                                }}
-                                                            />
-                                                            <div className="editor-subtle">0 = inherit panel default</div>
-                                                        </div>
-
-                                                        <div className="editor-label">Fill opacity (%)</div>
-                                                        <div className="editor-control">
-                                                            <input
-                                                                type="number"
-                                                                min="0"
-                                                                max="100"
-                                                                value={Number(row.fillOpacity || 0)}
-                                                                onChange={(e) => {
-                                                                    const raw = String(e.target.value || '').trim();
-                                                                    const parsed = Number(raw);
-                                                                    const next = Number.isFinite(parsed) ? clampInt(parsed, 0, 0, 100) : 0;
-                                                                    upsertSeriesRow(row.id, { fillOpacity: next });
-                                                                }}
-                                                            />
-                                                            <div className="editor-subtle">0 = inherit panel default</div>
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="ts-series-subsection">
-                                                        <div className="ts-series-subtitle">Axis options</div>
-                                                        <div className="editor-label">Axis</div>
-                                                        <div className="editor-control">
-                                                            <select value={row.axis || 'left'} onChange={(e) => upsertSeriesRow(row.id, { axis: e.target.value === 'right' ? 'right' : 'left' })}>
-                                                                <option value="left">Left</option>
-                                                                <option value="right">Right</option>
-                                                            </select>
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="ts-series-subsection">
-                                                        <div className="ts-series-subtitle">Legend options</div>
-                                                        <div className="editor-label">Display label</div>
-                                                        <div className="editor-control"><input type="text" value={row.label} onChange={(e) => upsertSeriesRow(row.id, { label: e.target.value })} /></div>
-
-                                                        <div className="editor-label">Show in legend</div>
-                                                        <div className="editor-control">
-                                                            <label>
+                                                            <div className="editor-label">Fill opacity (%)</div>
+                                                            <div className="editor-control">
                                                                 <input
-                                                                    type="checkbox"
-                                                                    checked={row.showInLegend !== false}
-                                                                    onChange={(e) => upsertSeriesRow(row.id, { showInLegend: e.target.checked })}
-                                                                /> Enabled
-                                                            </label>
-                                                        </div>
-                                                    </div>
+                                                                    type="number"
+                                                                    min="0"
+                                                                    max="100"
+                                                                    value={Number(row.fillOpacity || 0)}
+                                                                    onChange={(e) => {
+                                                                        const raw = String(e.target.value || '').trim();
+                                                                        const parsed = Number(raw);
+                                                                        const next = Number.isFinite(parsed) ? clampInt(parsed, 0, 0, 100) : 0;
+                                                                        upsertSeriesRow(row.id, { fillOpacity: next });
+                                                                    }}
+                                                                />
+                                                                <div className="editor-subtle">0 = inherit panel default</div>
+                                                            </div>
+                                                        </>
+                                                    ))}
+
+                                                    {renderSeriesSection(row.id, 'axis', 'Axis options', (
+                                                        <>
+                                                            <div className="editor-label">Axis</div>
+                                                            <div className="editor-control">
+                                                                <select value={row.axis || 'left'} onChange={(e) => upsertSeriesRow(row.id, { axis: e.target.value === 'right' ? 'right' : 'left' })}>
+                                                                    <option value="left">Left</option>
+                                                                    <option value="right">Right</option>
+                                                                </select>
+                                                            </div>
+                                                        </>
+                                                    ))}
+
+                                                    {renderSeriesSection(row.id, 'legend', 'Legend options', (
+                                                        <>
+                                                            <div className="editor-label">Display label</div>
+                                                            <div className="editor-control"><input type="text" value={row.label} onChange={(e) => upsertSeriesRow(row.id, { label: e.target.value })} /></div>
+
+                                                            <div className="editor-label">Show in legend</div>
+                                                            <div className="editor-control">
+                                                                <label>
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={row.showInLegend !== false}
+                                                                        onChange={(e) => upsertSeriesRow(row.id, { showInLegend: e.target.checked })}
+                                                                    /> Enabled
+                                                                </label>
+                                                            </div>
+                                                        </>
+                                                    ))}
                                                 </div>
                                             ))}
                                         </div>

@@ -154,6 +154,34 @@ $page->show();
         gap: 10px;
     }
 
+    .dashboard-editor-dock {
+        display: flex;
+        align-items: stretch;
+        flex: 0 0 auto;
+        min-width: 0;
+    }
+
+    .dashboard-editor-toggle {
+        width: 24px;
+        min-width: 24px;
+        border: 1px solid var(--border-color);
+        border-right: 0;
+        border-radius: 8px 0 0 8px;
+        background: linear-gradient(180deg, rgba(20, 32, 46, 0.98), rgba(12, 19, 30, 0.98));
+        color: #d7e3f2;
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+    }
+
+    .dashboard-editor-toggle:hover {
+        background: linear-gradient(180deg, rgba(26, 40, 56, 0.98), rgba(16, 24, 38, 0.98));
+    }
+
     .dashboard-editor-sidebar {
         width: min(460px, 42vw);
         min-width: 360px;
@@ -163,6 +191,20 @@ $page->show();
         display: flex;
         flex-direction: column;
         overflow: hidden;
+        transition: width 160ms ease, min-width 160ms ease, opacity 120ms ease, border-color 120ms ease;
+    }
+
+    .dashboard-editor-dock.is-collapsed .dashboard-editor-toggle {
+        border-right: 1px solid var(--border-color);
+        border-radius: 8px;
+    }
+
+    .dashboard-editor-sidebar.is-collapsed {
+        width: 0;
+        min-width: 0;
+        border-color: transparent;
+        opacity: 0;
+        pointer-events: none;
     }
 
     .dashboard-editor-header {
@@ -1096,9 +1138,9 @@ $page->show();
     .ts-series-subsection {
         border: 1px solid rgba(132, 156, 186, 0.2);
         border-radius: 7px;
-        padding: 6px;
         margin-bottom: 7px;
         background: rgba(12, 20, 32, 0.72);
+        overflow: hidden;
     }
 
     .ts-series-subsection:last-child {
@@ -1110,8 +1152,42 @@ $page->show();
         font-weight: 700;
         letter-spacing: 0.02em;
         color: #c9d8ea;
-        margin-bottom: 6px;
         text-transform: uppercase;
+    }
+
+    .ts-series-subtitle-toggle {
+        width: 100%;
+        height: 34px;
+        border: 0;
+        border-bottom: 1px solid rgba(132, 156, 186, 0.2);
+        background: rgba(18, 29, 45, 0.88);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0 8px;
+        cursor: pointer;
+    }
+
+    .ts-series-subtitle-toggle .ts-series-subtitle {
+        margin: 0;
+    }
+
+    .ts-series-subtitle-icon {
+        color: #c9d8ea;
+        font-size: 12px;
+        font-weight: 700;
+    }
+
+    .ts-series-subsection-body {
+        padding: 6px;
+    }
+
+    .ts-series-subsection--open {
+        padding: 6px;
+    }
+
+    .ts-series-subsection--open .ts-series-subtitle {
+        margin-bottom: 6px;
     }
 
     .ts-series-grid {
@@ -1524,9 +1600,23 @@ $page->show();
         .dashboard-main {
             flex-direction: column;
         }
+        .dashboard-editor-dock {
+            width: 100%;
+        }
+        .dashboard-editor-toggle {
+            width: 100%;
+            min-width: 0;
+            height: 28px;
+            border-right: 1px solid var(--border-color);
+            border-bottom: 0;
+            border-radius: 8px 8px 0 0;
+        }
         .dashboard-editor-sidebar {
             width: 100%;
             min-width: 0;
+        }
+        .dashboard-editor-sidebar.is-collapsed {
+            height: 0;
         }
     }
 </style>
@@ -1933,6 +2023,7 @@ if (is_file($timestate_widget_file)) {
         const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
         const [activeEditorWidgetId, setActiveEditorWidgetId] = useState(null);
         const [editorHostEl, setEditorHostEl] = useState(null);
+        const [isEditorSidebarOpen, setIsEditorSidebarOpen] = useState(false);
         const setEditorHostRef = useCallback((node) => {
             setEditorHostEl(node || null);
         }, []);
@@ -2015,6 +2106,9 @@ if (is_file($timestate_widget_file)) {
         };
 
         const setWidgetEditing = useCallback((widgetId, nextOpen) => {
+            if (nextOpen !== false) {
+                setIsEditorSidebarOpen(true);
+            }
             setActiveEditorWidgetId((prev) => {
                 if (nextOpen === true) {
                     return widgetId;
@@ -2255,21 +2349,33 @@ if (is_file($timestate_widget_file)) {
                         </GridLayout>
                     </div>
 
-                    <aside className="dashboard-editor-sidebar">
-                        <div className="dashboard-editor-header">
-                            <div className="dashboard-editor-title">
-                                {activeEditorWidget
-                                    ? `Edit: ${String(activeEditorWidget.name || activeEditorWidget.type || 'Widget')}`
-                                    : 'Widget editor'}
+                    <div className={`dashboard-editor-dock ${isEditorSidebarOpen ? 'is-open' : 'is-collapsed'}`}>
+                        <button
+                            type="button"
+                            className="dashboard-editor-toggle"
+                            onClick={() => setIsEditorSidebarOpen((open) => !open)}
+                            aria-label={isEditorSidebarOpen ? 'Collapse editor panel' : 'Expand editor panel'}
+                            title={isEditorSidebarOpen ? 'Collapse editor panel' : 'Expand editor panel'}
+                        >
+                            {isEditorSidebarOpen ? '▸' : '◂'}
+                        </button>
+
+                        <aside className={`dashboard-editor-sidebar ${isEditorSidebarOpen ? 'is-open' : 'is-collapsed'}`}>
+                            <div className="dashboard-editor-header">
+                                <div className="dashboard-editor-title">
+                                    {activeEditorWidget
+                                        ? `Edit: ${String(activeEditorWidget.name || activeEditorWidget.type || 'Widget')}`
+                                        : 'Widget editor'}
+                                </div>
+                                {activeEditorWidget && (
+                                    <button className="btn-zbx" type="button" onClick={() => setActiveEditorWidgetId(null)}>Close</button>
+                                )}
                             </div>
-                            {activeEditorWidget && (
-                                <button className="btn-zbx" type="button" onClick={() => setActiveEditorWidgetId(null)}>Close</button>
-                            )}
-                        </div>
-                        <div className="dashboard-editor-host" ref={setEditorHostRef}>
-                            {!activeEditorWidget && <div className="dashboard-editor-empty">Select a widget and click Edit.</div>}
-                        </div>
-                    </aside>
+                            <div className="dashboard-editor-host" ref={setEditorHostRef}>
+                                {!activeEditorWidget && <div className="dashboard-editor-empty">Select a widget and click Edit.</div>}
+                            </div>
+                        </aside>
+                    </div>
                 </div>
             </div>
         );
