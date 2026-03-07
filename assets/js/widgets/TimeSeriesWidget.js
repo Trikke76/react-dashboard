@@ -14,7 +14,8 @@ window.ReactDashboardTimeSeriesWidget = (() => {
         lineWidth: 2,
         fillOpacity: 0,
         showPoints: false,
-        valueTransform: 'none',
+        showPercentileLine: false,
+        percentileValue: 95,
         yMin: '',
         yMax: '',
         seriesJson: ''
@@ -112,7 +113,7 @@ window.ReactDashboardTimeSeriesWidget = (() => {
         const base = (raw && typeof raw === 'object') ? raw : {};
         const legendMode = ['hidden', 'list', 'table'].includes(base.legendMode) ? base.legendMode : DEFAULTS.legendMode;
         const drawStyle = ['line', 'points', 'bars'].includes(base.drawStyle) ? base.drawStyle : DEFAULTS.drawStyle;
-        const valueTransform = ['none', 'percentile_line'].includes(base.valueTransform) ? base.valueTransform : DEFAULTS.valueTransform;
+        const legacyPercentileLine = base.valueTransform === 'percentile_line' || base.valueTransform === 'percentile';
         const yMin = String(base.yMin ?? '').trim();
         const yMax = String(base.yMax ?? '').trim();
 
@@ -131,7 +132,8 @@ window.ReactDashboardTimeSeriesWidget = (() => {
             lineWidth: clampInt(base.lineWidth, DEFAULTS.lineWidth, 1, 8),
             fillOpacity: clampInt(base.fillOpacity, DEFAULTS.fillOpacity, 0, 100),
             showPoints: toBoolean(base.showPoints, DEFAULTS.showPoints),
-            valueTransform,
+            showPercentileLine: toBoolean(base.showPercentileLine, legacyPercentileLine),
+            percentileValue: clampInt(base.percentileValue, DEFAULTS.percentileValue, 0, 100),
             yMin: yMin.slice(0, 32),
             yMax: yMax.slice(0, 32),
             seriesJson: serializeSeries(parseSeries(base.seriesJson))
@@ -367,6 +369,7 @@ window.ReactDashboardTimeSeriesWidget = (() => {
     window.TimeSeriesWidget = ({ remove, settings, updateSettings, apiClient, globalData }) => {
         const { useState, useEffect, useMemo, useRef, useCallback } = React;
         const ColorPickerField = window.ReactDashboardColorPickerField;
+        const HostSelectorField = window.ReactDashboardHostSelectorField;
         const cfg = { ...DEFAULTS, ...sanitizeSettings(settings || {}) };
 
         const bodyRef = useRef(null);
@@ -392,6 +395,7 @@ window.ReactDashboardTimeSeriesWidget = (() => {
         const [historyPointsDraft, setHistoryPointsDraft] = useState(String(cfg.historyPoints));
         const [lineWidthDraft, setLineWidthDraft] = useState(String(cfg.lineWidth));
         const [fillOpacityDraft, setFillOpacityDraft] = useState(String(cfg.fillOpacity));
+        const [percentileDraft, setPercentileDraft] = useState(String(cfg.percentileValue));
         const [refreshSecDraft, setRefreshSecDraft] = useState(String(cfg.refreshSec));
         const [hoverState, setHoverState] = useState(null);
         const [dragZoom, setDragZoom] = useState(null);
@@ -589,8 +593,9 @@ window.ReactDashboardTimeSeriesWidget = (() => {
             setHistoryPointsDraft(String(cfg.historyPoints));
             setLineWidthDraft(String(cfg.lineWidth));
             setFillOpacityDraft(String(cfg.fillOpacity));
+            setPercentileDraft(String(cfg.percentileValue));
             setRefreshSecDraft(String(cfg.refreshSec));
-        }, [cfg.lookbackHours, cfg.historyPoints, cfg.lineWidth, cfg.fillOpacity, cfg.refreshSec, editMode]);
+        }, [cfg.lookbackHours, cfg.historyPoints, cfg.lineWidth, cfg.fillOpacity, cfg.percentileValue, cfg.refreshSec, editMode]);
 
         const chartSeries = useMemo(() => {
             if (!Array.isArray(model.series)) {
@@ -598,8 +603,6 @@ window.ReactDashboardTimeSeriesWidget = (() => {
             }
             return model.series.filter((serie) => Array.isArray(serie.points) && serie.points.length > 0);
         }, [model.series]);
-
-        const valueTransformMode = cfg.valueTransform === 'percentile_line' ? 'percentile_line' : 'none';
 
         const preparedSeries = useMemo(() => chartSeries.map((serie, idx) => {
             const points = (Array.isArray(serie.points) ? serie.points : [])
@@ -743,22 +746,30 @@ window.ReactDashboardTimeSeriesWidget = (() => {
         }), [preparedSeries, viewTimeFrom, safeViewTimeTo]);
 
         const percentileLine = useMemo(() => {
-            if (valueTransformMode !== 'percentile_line') {
+            if (cfg.showPercentileLine !== true) {
                 return null;
             }
-            const percentileTarget = 95;
-            const perSeries = preparedSeries
-                .map((serie) => calculatePercentile(serie.points.map((point) => point.v), percentileTarget))
-                .filter((value) => Number.isFinite(value));
-            if (perSeries.length === 0) {
+            const percentileTarget = clampInt(cfg.percentileValue, 95, 0, 100);
+            const visible = [];
+            preparedSeries.forEach((serie) => {
+                serie.points.forEach((point) => {
+                    if (point.t >= viewTimeFrom && point.t <= safeViewTimeTo) {
+                        visible.push(point.v);
+                    }
+                });
+            });
+            const source = visible.length > 0
+                ? visible
+                : preparedSeries.flatMap((serie) => serie.points.map((point) => point.v));
+            const percentileValue = calculatePercentile(source, percentileTarget);
+            if (!Number.isFinite(percentileValue)) {
                 return null;
             }
-            const averagePercentile = perSeries.reduce((sum, value) => sum + value, 0) / perSeries.length;
             return {
-                label: `P${percentileTarget} avg`,
-                value: averagePercentile
+                label: `P${percentileTarget}`,
+                value: percentileValue
             };
-        }, [preparedSeries, valueTransformMode]);
+        }, [cfg.showPercentileLine, cfg.percentileValue, preparedSeries, viewTimeFrom, safeViewTimeTo]);
 
         const pointerToLocal = useCallback((event) => {
             if (!svgRef.current) {
@@ -997,6 +1008,24 @@ window.ReactDashboardTimeSeriesWidget = (() => {
             setRefreshSecDraft(String(next));
             if (next !== Number(cfg.refreshSec)) {
                 updateSettings({ refreshSec: next });
+            }
+        };
+
+        const commitPercentileDraft = () => {
+            const raw = String(percentileDraft || '').trim();
+            if (raw === '') {
+                setPercentileDraft(String(cfg.percentileValue));
+                return;
+            }
+            const parsed = Number(raw.replace(/,/g, '.'));
+            if (!Number.isFinite(parsed)) {
+                setPercentileDraft(String(cfg.percentileValue));
+                return;
+            }
+            const next = clampInt(parsed, cfg.percentileValue, 0, 100);
+            setPercentileDraft(String(next));
+            if (next !== Number(cfg.percentileValue)) {
+                updateSettings({ percentileValue: next });
             }
         };
 
@@ -1294,20 +1323,31 @@ window.ReactDashboardTimeSeriesWidget = (() => {
 
                                     <div className="editor-label">Hosts</div>
                                     <div className="editor-control">
-                                        <select
-                                            multiple
-                                            size="5"
-                                            value={selectedHostIds}
-                                            disabled={hostsLoading}
-                                            onChange={(e) => {
-                                                const values = Array.from(e.target.selectedOptions).map((opt) => opt.value);
-                                                updateSettings({ hostidsCsv: values.join(',') });
-                                            }}
-                                        >
-                                            {hosts.map((host) => (
-                                                <option key={host.hostid} value={host.hostid}>{host.name}</option>
-                                            ))}
-                                        </select>
+                                        {HostSelectorField ? (
+                                            <HostSelectorField
+                                                hosts={hosts}
+                                                value={cfg.hostidsCsv}
+                                                onChange={(hostidsCsv) => updateSettings({ hostidsCsv })}
+                                                disabled={hostsLoading || hosts.length === 0}
+                                                buttonLabel="Select hosts"
+                                                clearLabel="Clear"
+                                            />
+                                        ) : (
+                                            <select
+                                                multiple
+                                                size="5"
+                                                value={selectedHostIds}
+                                                disabled={hostsLoading}
+                                                onChange={(e) => {
+                                                    const values = Array.from(e.target.selectedOptions).map((opt) => opt.value);
+                                                    updateSettings({ hostidsCsv: values.join(',') });
+                                                }}
+                                            >
+                                                {hosts.map((host) => (
+                                                    <option key={host.hostid} value={host.hostid}>{host.name}</option>
+                                                ))}
+                                            </select>
+                                        )}
                                     </div>
 
                                     <div className="editor-label">Series</div>
@@ -1414,12 +1454,34 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                         </select>
                                     </div>
 
-                                    <div className="editor-label">Value mode</div>
+                                    <div className="editor-label">Percentile line</div>
                                     <div className="editor-control">
-                                        <select value={cfg.valueTransform || 'none'} onChange={(e) => updateSettings({ valueTransform: e.target.value === 'percentile_line' ? 'percentile_line' : 'none' })}>
-                                            <option value="none">Raw value</option>
-                                            <option value="percentile_line">Percentile line (P95 avg period)</option>
-                                        </select>
+                                        <label>
+                                            <input
+                                                type="checkbox"
+                                                checked={cfg.showPercentileLine === true}
+                                                onChange={(e) => updateSettings({ showPercentileLine: e.target.checked })}
+                                            /> Show percentile reference line
+                                        </label>
+                                    </div>
+
+                                    <div className="editor-label">Percentile (%)</div>
+                                    <div className="editor-control">
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            max="100"
+                                            value={percentileDraft}
+                                            disabled={cfg.showPercentileLine !== true}
+                                            onChange={(e) => setPercentileDraft(e.target.value)}
+                                            onBlur={commitPercentileDraft}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    e.preventDefault();
+                                                    commitPercentileDraft();
+                                                }
+                                            }}
+                                        />
                                     </div>
 
                                     <div className="editor-label">Line width</div>

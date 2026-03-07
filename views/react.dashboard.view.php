@@ -1442,12 +1442,24 @@ $zabbix_config = [
 $widgets_dir = $data['module_path'] . '/assets/js/widgets';
 $components_dir = $data['module_path'] . '/assets/js/components';
 $color_picker_file = $components_dir . '/ColorPickerField.js';
+$host_selector_file = $components_dir . '/HostSelectorField.js';
 $clock_widget_file = $widgets_dir . '/ClockWidget.js';
 $timeseries_widget_file = $widgets_dir . '/TimeSeriesWidget.js';
 $timestate_widget_file = $widgets_dir . '/TimeStateWidget.js';
 
 if (is_file($color_picker_file)) {
     $component_script = file_get_contents($color_picker_file);
+    if ($component_script === false) {
+        $component_script = '';
+    }
+    $component_script = preg_replace('~</script~i', '<\\/script', $component_script);
+    echo '<script type="text/babel" data-presets="react">' . "\n";
+    echo $component_script;
+    echo "\n</script>\n";
+}
+
+if (is_file($host_selector_file)) {
+    $component_script = file_get_contents($host_selector_file);
     if ($component_script === false) {
         $component_script = '';
     }

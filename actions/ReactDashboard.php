@@ -168,9 +168,6 @@ class ReactDashboard extends CController {
 
         if ($action === 'timestate_data') {
             $hostids = $this->parseIds((string) $this->req('hostids_csv', ''));
-            if ($hostids === []) {
-                $this->respondJson(['error' => 'Selecteer minstens een host.']);
-            }
 
             [$legacy_filter_mode, $legacy_item_filter] = $this->resolveFilterInput();
             $row_sort = $this->clampInt((int) $this->req('row_sort', 0), 0, 2);
@@ -188,6 +185,16 @@ class ReactDashboard extends CController {
                 'state_map' => (string) $this->req('state_map', self::DEFAULT_STATE_MAP)
             ];
             $datasets = $this->parseDataSets((string) $this->req('datasets_json', ''), $fallback_data_set);
+            $has_dataset_hosts = false;
+            foreach ($datasets as $data_set) {
+                if (!empty($data_set['hostids'])) {
+                    $has_dataset_hosts = true;
+                    break;
+                }
+            }
+            if ($hostids === [] && !$has_dataset_hosts) {
+                $this->respondJson(['error' => 'Selecteer minstens een host.']);
+            }
 
             $time_to = time();
             $global_time_from = $time_to;
@@ -213,9 +220,11 @@ class ReactDashboard extends CController {
                     'limit' => min(self::MAX_ITEM_QUERY_LIMIT, ((int) $data_set['max_rows']) * 8)
                 ];
 
-                if ($hostids !== []) {
-                    $params['hostids'] = $hostids;
+                $effective_hostids = !empty($data_set['hostids']) ? $data_set['hostids'] : $hostids;
+                if ($effective_hostids === []) {
+                    continue;
                 }
+                $params['hostids'] = $effective_hostids;
                 $filter_type = (string) ($data_set['filter_type'] ?? 'key');
                 $filter_value = trim((string) ($data_set['filter_value'] ?? ''));
                 if ($filter_value !== '') {
@@ -692,6 +701,7 @@ class ReactDashboard extends CController {
 
         return [
             'name' => substr(trim((string) ($entry['name'] ?? '')), 0, 120),
+            'hostids' => $this->parseIds((string) ($entry['hostids_csv'] ?? '')),
             'filter_type' => $this->normalizeFilterType(
                 (string) ($entry['filter_type'] ?? ''),
                 trim((string) ($entry['item_key_search'] ?? '')),

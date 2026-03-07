@@ -1,6 +1,7 @@
 window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClient, globalData }) => {
     const { useState, useEffect, useMemo, useCallback } = React;
     const ColorPickerField = window.ReactDashboardColorPickerField;
+    const HostSelectorField = window.ReactDashboardHostSelectorField;
 
     const DEFAULT_STATE_MAP = 'value:1=OK|#2E7D32,value:0=Problem|#C62828';
     const MAX_DATASETS = 10;
@@ -12,6 +13,7 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
 
     const DEFAULT_DATASET = {
         name: '',
+        hostids_csv: '',
         filter_type: 'key',
         filter_value: '',
         filter_exact: '0',
@@ -66,9 +68,6 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
 
     const [groups, setGroups] = useState([]);
     const [hosts, setHosts] = useState([]);
-
-    const [hostPickerOpen, setHostPickerOpen] = useState(false);
-    const [hostSearchTerm, setHostSearchTerm] = useState('');
 
     const [activeDatasetIdx, setActiveDatasetIdx] = useState(0);
     const [collapsedDatasets, setCollapsedDatasets] = useState({});
@@ -184,6 +183,7 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
 
         return {
             name: String(source.name || ''),
+            hostids_csv: parseCsvIds(source.hostids_csv).join(','),
             filter_type: filterType,
             filter_value: filterValue,
             filter_exact: String(source.filter_exact ?? '0') === '1' ? '1' : '0',
@@ -253,33 +253,6 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
 
     const datasets = useMemo(() => parseDataSets(), [parseDataSets]);
     const safeActiveDatasetIdx = Math.max(0, Math.min(activeDatasetIdx, datasets.length - 1));
-
-    const selectedHostIds = useMemo(() => new Set(parseCsvIds(cfg.hostidsCsv)), [cfg.hostidsCsv]);
-
-    const filteredHosts = useMemo(() => {
-        const query = String(hostSearchTerm || '').trim().toLowerCase();
-        if (query === '') {
-            return hosts;
-        }
-
-        return hosts.filter((host) => String(host.name || '').toLowerCase().includes(query));
-    }, [hosts, hostSearchTerm]);
-
-    const selectedHostSummary = useMemo(() => {
-        const selectedHosts = hosts
-            .filter((host) => selectedHostIds.has(String(host.hostid)))
-            .map((host) => String(host.name || ''))
-            .filter(Boolean);
-
-        if (selectedHosts.length === 0) {
-            return selectedHostIds.size > 0 ? `${selectedHostIds.size} host(s) selected` : 'No hosts selected';
-        }
-        if (selectedHosts.length <= 3) {
-            return selectedHosts.join(', ');
-        }
-
-        return `${selectedHosts.slice(0, 3).join(', ')} +${selectedHosts.length - 3}`;
-    }, [hosts, selectedHostIds]);
 
     useEffect(() => {
         if (safeActiveDatasetIdx !== activeDatasetIdx) {
@@ -609,28 +582,6 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
         updateDataset(datasetIdx, { state_map: serializeMappings(next) });
     };
 
-    const toggleHost = (hostid) => {
-        const next = new Set(selectedHostIds);
-        if (next.has(hostid)) {
-            next.delete(hostid);
-        }
-        else {
-            next.add(hostid);
-        }
-
-        const hostidsCsv = Array.from(next).sort((a, b) => Number(a) - Number(b)).join(',');
-        updateSettings({ hostidsCsv });
-    };
-
-    const selectAllVisibleHosts = () => {
-        const next = new Set(selectedHostIds);
-        filteredHosts.forEach((host) => next.add(String(host.hostid)));
-        const hostidsCsv = Array.from(next).sort((a, b) => Number(a) - Number(b)).join(',');
-        updateSettings({ hostidsCsv });
-    };
-
-    const clearHostSelection = () => updateSettings({ hostidsCsv: '' });
-
     const toggleGroup = (name) => {
         setCollapsedGroups((prev) => ({ ...prev, [name]: !prev[name] }));
     };
@@ -756,13 +707,15 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
         }
 
         const hostidsCsv = String(cfg.hostidsCsv || '');
+        const datasetHostidsCsv = parseCsvIds(dataset && dataset.hostids_csv ? dataset.hostids_csv : '').join(',');
+        const effectiveHostidsCsv = datasetHostidsCsv !== '' ? datasetHostidsCsv : hostidsCsv;
         const filterMode = String(dataset && dataset.filter_type ? dataset.filter_type : 'key') === 'name' ? 'name' : 'key';
         const filterValue = String(dataset && dataset.filter_value ? dataset.filter_value : '').trim();
         const hasWildcard = filterValue.includes('*') || filterValue.includes('?');
         const suggestionFilter = hasWildcard ? filterValue : `*${filterValue}*`;
-        const signature = [hostidsCsv, filterMode, suggestionFilter].join('|');
+        const signature = [effectiveHostidsCsv, filterMode, suggestionFilter].join('|');
 
-        if (hostidsCsv === '' || filterValue === '') {
+        if (effectiveHostidsCsv === '' || filterValue === '') {
             clearDatasetSuggestions(datasetIdx);
             return;
         }
@@ -773,7 +726,7 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
         try {
             const payload = await cachedJson({
                 action_type: 'timestate_items',
-                hostids_csv: hostidsCsv,
+                hostids_csv: effectiveHostidsCsv,
                 filter_mode: filterMode,
                 item_filter: suggestionFilter,
                 filter_exact: '0',
@@ -804,7 +757,9 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
 
         datasets.forEach((dataset, idx) => {
             const filterValue = String((dataset && dataset.filter_value) || '').trim();
-            if (hostidsCsv === '' || filterValue === '') {
+            const datasetHostidsCsv = parseCsvIds(dataset && dataset.hostids_csv ? dataset.hostids_csv : '').join(',');
+            const effectiveHostidsCsv = datasetHostidsCsv !== '' ? datasetHostidsCsv : hostidsCsv;
+            if (effectiveHostidsCsv === '' || filterValue === '') {
                 clearDatasetSuggestions(idx);
                 return;
             }
@@ -1172,8 +1127,6 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                                     value={cfg.groupid || ''}
                                     onChange={(e) => {
                                         const groupid = e.target.value;
-                                        setHostPickerOpen(false);
-                                        setHostSearchTerm('');
                                         updateSettings({ groupid, hostidsCsv: '' });
                                         fetchHosts(groupid);
                                     }}
@@ -1187,28 +1140,19 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
 
                             <div className="editor-label">Hosts</div>
                             <div className="editor-control">
-                                <div className="editor-inline-actions">
-                                    <button
-                                        className="btn-zbx"
-                                        type="button"
+                                {HostSelectorField ? (
+                                    <HostSelectorField
+                                        hosts={hosts}
+                                        value={cfg.hostidsCsv}
+                                        onChange={(hostidsCsv) => updateSettings({ hostidsCsv })}
                                         disabled={!cfg.groupid || hosts.length === 0}
-                                        onClick={() => setHostPickerOpen(true)}
-                                    >
-                                        Select hosts
-                                    </button>
-                                    <button
-                                        className="btn-zbx"
-                                        type="button"
-                                        disabled={selectedHostIds.size === 0}
-                                        onClick={clearHostSelection}
-                                    >
-                                        Clear
-                                    </button>
-                                    <span className="editor-subtle">
-                                        Selected: {selectedHostIds.size}/{hosts.length}
-                                    </span>
-                                </div>
-                                <div className="editor-subtle">{selectedHostSummary}</div>
+                                        buttonLabel="Select hosts"
+                                        clearLabel="Clear"
+                                        emptySummary="No hosts selected"
+                                    />
+                                ) : (
+                                    <div className="editor-subtle">Host selector component unavailable.</div>
+                                )}
                             </div>
 
                             <div className="editor-label">Data sources</div>
@@ -1217,7 +1161,8 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                                     {datasets.map((dataSet, idx) => {
                                         const dataSetMappings = getDatasetMappingRows(dataSet);
                                         const isCollapsed = collapsedDatasets[idx] === true;
-                                        const collapsedSummary = `${dataSet.filter_type === 'name' ? 'Item name' : 'Item key'}: ${String(dataSet.filter_value || '').trim() || 'No filter'} | rows ${dataSet.max_rows} | ${dataSet.lookback_hours}h`;
+                                        const datasetHostCount = parseCsvIds(dataSet.hostids_csv).length;
+                                        const collapsedSummary = `${dataSet.filter_type === 'name' ? 'Item name' : 'Item key'}: ${String(dataSet.filter_value || '').trim() || 'No filter'} | hosts ${datasetHostCount > 0 ? datasetHostCount : 'global'} | rows ${dataSet.max_rows} | ${dataSet.lookback_hours}h`;
 
                                         return (
                                             <div key={`dataset-${idx}`} className="editor-dataset-wrap">
@@ -1278,6 +1223,28 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                                                                         <option value="key">Item key</option>
                                                                         <option value="name">Item name</option>
                                                                     </select>
+                                                                </label>
+
+                                                                <label className="is-full">
+                                                                    <span className="editor-subtle">Hosts (data source)</span>
+                                                                    {HostSelectorField ? (
+                                                                        <HostSelectorField
+                                                                            hosts={hosts}
+                                                                            value={dataSet.hostids_csv}
+                                                                            onChange={(hostidsCsv) => {
+                                                                                updateDataset(idx, { hostids_csv: hostidsCsv });
+                                                                                clearDatasetSuggestions(idx);
+                                                                            }}
+                                                                            disabled={hosts.length === 0}
+                                                                            buttonLabel="Select hosts"
+                                                                            clearLabel="Use global hosts"
+                                                                            emptySummary={parseCsvIds(dataSet.hostids_csv).length > 0
+                                                                                ? `${parseCsvIds(dataSet.hostids_csv).length} host(s) selected`
+                                                                                : 'Fallback: global host selection'}
+                                                                        />
+                                                                    ) : (
+                                                                        <div className="editor-subtle">Host selector component unavailable.</div>
+                                                                    )}
                                                                 </label>
 
                                                                 <label>
@@ -1668,45 +1635,6 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
                 )}
             </div>
 
-            {editMode && hostPickerOpen && (
-                <div className="editor-modal-backdrop" onClick={() => setHostPickerOpen(false)}>
-                    <div className="editor-modal" onClick={(e) => e.stopPropagation()}>
-                        <div className="editor-modal-header">
-                            <strong>Select hosts</strong>
-                            <button className="btn-zbx btn-danger" type="button" onClick={() => setHostPickerOpen(false)}>✕</button>
-                        </div>
-
-                        <div className="editor-inline-actions" style={{ marginBottom: '8px' }}>
-                            <input
-                                type="text"
-                                value={hostSearchTerm}
-                                onChange={(e) => setHostSearchTerm(e.target.value)}
-                                placeholder="Filter hosts..."
-                            />
-                            <button className="btn-zbx" type="button" onClick={selectAllVisibleHosts} disabled={filteredHosts.length === 0}>Select visible</button>
-                            <button className="btn-zbx" type="button" onClick={clearHostSelection} disabled={selectedHostIds.size === 0}>Clear</button>
-                        </div>
-
-                        <div className="editor-host-list editor-host-list--picker">
-                            {filteredHosts.length === 0 && <div className="editor-subtle">No hosts match this filter.</div>}
-                            {filteredHosts.map((host) => (
-                                <label key={host.hostid} className="editor-host-item">
-                                    <input
-                                        type="checkbox"
-                                        checked={selectedHostIds.has(String(host.hostid))}
-                                        onChange={() => toggleHost(String(host.hostid))}
-                                    />
-                                    <span>{host.name}</span>
-                                </label>
-                            ))}
-                        </div>
-
-                        <div className="editor-footer" style={{ marginTop: '10px' }}>
-                            <button className="btn-zbx" type="button" onClick={() => setHostPickerOpen(false)}>Done</button>
-                        </div>
-                    </div>
-                </div>
-            )}
         </div>
     );
 };
