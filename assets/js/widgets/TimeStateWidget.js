@@ -75,6 +75,8 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
     const [collapsedGroups, setCollapsedGroups] = useState({});
     const [itemSuggestionsByDataset, setItemSuggestionsByDataset] = useState({});
     const [itemSuggestionSignatures, setItemSuggestionSignatures] = useState({});
+    const [datasetNumberDrafts, setDatasetNumberDrafts] = useState({});
+    const [refreshSecDraft, setRefreshSecDraft] = useState(String(cfg.refreshSec));
 
     const parseCsvIds = (raw) => String(raw || '')
         .split(/[\s,]+/)
@@ -443,6 +445,107 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
     const updateDataset = (index, patch) => {
         const next = datasets.map((row, rowIdx) => (rowIdx === index ? { ...row, ...patch } : row));
         updateDatasets(next);
+    };
+
+    useEffect(() => {
+        setDatasetNumberDrafts((prev) => {
+            const next = {};
+            datasets.forEach((dataset, idx) => {
+                const prevDraft = prev[idx] || {};
+                next[idx] = {
+                    max_rows: typeof prevDraft.max_rows === 'string'
+                        ? prevDraft.max_rows
+                        : String(dataset.max_rows || '20'),
+                    lookback_hours: typeof prevDraft.lookback_hours === 'string'
+                        ? prevDraft.lookback_hours
+                        : String(dataset.lookback_hours || '24'),
+                    merge_shorter_than: typeof prevDraft.merge_shorter_than === 'string'
+                        ? prevDraft.merge_shorter_than
+                        : String(dataset.merge_shorter_than || '0'),
+                    history_points: typeof prevDraft.history_points === 'string'
+                        ? prevDraft.history_points
+                        : String(dataset.history_points || '500')
+                };
+            });
+
+            const prevKeys = Object.keys(prev);
+            const nextKeys = Object.keys(next);
+            const unchanged = prevKeys.length === nextKeys.length
+                && nextKeys.every((key) => {
+                    const prevRow = prev[key] || {};
+                    const nextRow = next[key] || {};
+                    return prevRow.max_rows === nextRow.max_rows
+                        && prevRow.lookback_hours === nextRow.lookback_hours
+                        && prevRow.merge_shorter_than === nextRow.merge_shorter_than
+                        && prevRow.history_points === nextRow.history_points;
+                });
+
+            return unchanged ? prev : next;
+        });
+    }, [datasets]);
+
+    useEffect(() => {
+        setRefreshSecDraft(String(cfg.refreshSec));
+    }, [cfg.refreshSec]);
+
+    const getDatasetNumberDraft = (datasetIdx, field, fallback) => {
+        const row = datasetNumberDrafts[datasetIdx];
+        if (row && typeof row[field] === 'string') {
+            return row[field];
+        }
+        return String(fallback ?? '');
+    };
+
+    const setDatasetNumberDraft = (datasetIdx, field, value) => {
+        setDatasetNumberDrafts((prev) => ({
+            ...prev,
+            [datasetIdx]: {
+                ...(prev[datasetIdx] || {}),
+                [field]: String(value ?? '')
+            }
+        }));
+    };
+
+    const commitDatasetNumberDraft = (datasetIdx, field, currentValue, min, max) => {
+        const rawValue = getDatasetNumberDraft(datasetIdx, field, currentValue).trim();
+        if (rawValue === '') {
+            const normalizedCurrent = String(currentValue ?? '');
+            setDatasetNumberDraft(datasetIdx, field, normalizedCurrent);
+            return;
+        }
+
+        const parsed = Number(rawValue.replace(/,/g, '.'));
+        if (!Number.isFinite(parsed)) {
+            const normalizedCurrent = String(currentValue ?? '');
+            setDatasetNumberDraft(datasetIdx, field, normalizedCurrent);
+            return;
+        }
+
+        const nextValue = String(clampInt(Math.round(parsed), min, max));
+        setDatasetNumberDraft(datasetIdx, field, nextValue);
+        if (nextValue !== String(currentValue ?? '')) {
+            updateDataset(datasetIdx, { [field]: nextValue });
+        }
+    };
+
+    const commitRefreshSecDraft = () => {
+        const raw = String(refreshSecDraft || '').trim();
+        if (raw === '') {
+            setRefreshSecDraft(String(cfg.refreshSec));
+            return;
+        }
+
+        const parsed = Number(raw.replace(/,/g, '.'));
+        if (!Number.isFinite(parsed)) {
+            setRefreshSecDraft(String(cfg.refreshSec));
+            return;
+        }
+
+        const next = clampInt(Math.round(parsed), 5, 3600);
+        setRefreshSecDraft(String(next));
+        if (next !== Number(cfg.refreshSec)) {
+            updateSettings({ refreshSec: next });
+        }
     };
 
     const clearDatasetSuggestions = useCallback((datasetIdx) => {
@@ -1238,17 +1341,56 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
 
                                                                 <label>
                                                                     <span className="editor-subtle">Max rows</span>
-                                                                    <input type="number" min="1" max={MAX_ROWS} value={dataSet.max_rows} onChange={(e) => updateDataset(idx, { max_rows: String(clampInt(Number(e.target.value) || 20, 1, MAX_ROWS)) })} />
+                                                                    <input
+                                                                        type="number"
+                                                                        min="1"
+                                                                        max={MAX_ROWS}
+                                                                        value={getDatasetNumberDraft(idx, 'max_rows', dataSet.max_rows)}
+                                                                        onChange={(e) => setDatasetNumberDraft(idx, 'max_rows', e.target.value)}
+                                                                        onBlur={() => commitDatasetNumberDraft(idx, 'max_rows', dataSet.max_rows, 1, MAX_ROWS)}
+                                                                        onKeyDown={(e) => {
+                                                                            if (e.key === 'Enter') {
+                                                                                e.preventDefault();
+                                                                                commitDatasetNumberDraft(idx, 'max_rows', dataSet.max_rows, 1, MAX_ROWS);
+                                                                            }
+                                                                        }}
+                                                                    />
                                                                 </label>
 
                                                                 <label>
                                                                     <span className="editor-subtle">Lookback (hours)</span>
-                                                                    <input type="number" min="1" max={MAX_LOOKBACK_HOURS} value={dataSet.lookback_hours} onChange={(e) => updateDataset(idx, { lookback_hours: String(clampInt(Number(e.target.value) || 24, 1, MAX_LOOKBACK_HOURS)) })} />
+                                                                    <input
+                                                                        type="number"
+                                                                        min="1"
+                                                                        max={MAX_LOOKBACK_HOURS}
+                                                                        value={getDatasetNumberDraft(idx, 'lookback_hours', dataSet.lookback_hours)}
+                                                                        onChange={(e) => setDatasetNumberDraft(idx, 'lookback_hours', e.target.value)}
+                                                                        onBlur={() => commitDatasetNumberDraft(idx, 'lookback_hours', dataSet.lookback_hours, 1, MAX_LOOKBACK_HOURS)}
+                                                                        onKeyDown={(e) => {
+                                                                            if (e.key === 'Enter') {
+                                                                                e.preventDefault();
+                                                                                commitDatasetNumberDraft(idx, 'lookback_hours', dataSet.lookback_hours, 1, MAX_LOOKBACK_HOURS);
+                                                                            }
+                                                                        }}
+                                                                    />
                                                                 </label>
 
                                                                 <label>
                                                                     <span className="editor-subtle">History points / item</span>
-                                                                    <input type="number" min="10" max={MAX_HISTORY_POINTS} value={dataSet.history_points} onChange={(e) => updateDataset(idx, { history_points: String(clampInt(Number(e.target.value) || 500, 10, MAX_HISTORY_POINTS)) })} />
+                                                                    <input
+                                                                        type="number"
+                                                                        min="10"
+                                                                        max={MAX_HISTORY_POINTS}
+                                                                        value={getDatasetNumberDraft(idx, 'history_points', dataSet.history_points)}
+                                                                        onChange={(e) => setDatasetNumberDraft(idx, 'history_points', e.target.value)}
+                                                                        onBlur={() => commitDatasetNumberDraft(idx, 'history_points', dataSet.history_points, 10, MAX_HISTORY_POINTS)}
+                                                                        onKeyDown={(e) => {
+                                                                            if (e.key === 'Enter') {
+                                                                                e.preventDefault();
+                                                                                commitDatasetNumberDraft(idx, 'history_points', dataSet.history_points, 10, MAX_HISTORY_POINTS);
+                                                                            }
+                                                                        }}
+                                                                    />
                                                                 </label>
 
                                                                 <label>
@@ -1261,7 +1403,20 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
 
                                                                 <label>
                                                                     <span className="editor-subtle">Merge short (&lt; sec)</span>
-                                                                    <input type="number" min="0" max="3600" value={dataSet.merge_shorter_than} onChange={(e) => updateDataset(idx, { merge_shorter_than: String(clampInt(Number(e.target.value) || 0, 0, 3600)) })} />
+                                                                    <input
+                                                                        type="number"
+                                                                        min="0"
+                                                                        max="3600"
+                                                                        value={getDatasetNumberDraft(idx, 'merge_shorter_than', dataSet.merge_shorter_than)}
+                                                                        onChange={(e) => setDatasetNumberDraft(idx, 'merge_shorter_than', e.target.value)}
+                                                                        onBlur={() => commitDatasetNumberDraft(idx, 'merge_shorter_than', dataSet.merge_shorter_than, 0, 3600)}
+                                                                        onKeyDown={(e) => {
+                                                                            if (e.key === 'Enter') {
+                                                                                e.preventDefault();
+                                                                                commitDatasetNumberDraft(idx, 'merge_shorter_than', dataSet.merge_shorter_than, 0, 3600);
+                                                                            }
+                                                                        }}
+                                                                    />
                                                                 </label>
 
                                                                 <label>
@@ -1408,7 +1563,20 @@ window.TimeStateWidget = ({ remove, settings, updateSettings, widgetId, apiClien
 
                                 <div className="editor-label">Refresh (seconds)</div>
                                 <div className="editor-control">
-                                    <input type="number" min="5" max="3600" value={cfg.refreshSec} onChange={(e) => updateSettings({ refreshSec: Number(e.target.value) || 30 })} />
+                                    <input
+                                        type="number"
+                                        min="5"
+                                        max="3600"
+                                        value={refreshSecDraft}
+                                        onChange={(e) => setRefreshSecDraft(e.target.value)}
+                                        onBlur={commitRefreshSecDraft}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                e.preventDefault();
+                                                commitRefreshSecDraft();
+                                            }
+                                        }}
+                                    />
                                 </div>
 
                                 <div className="editor-label">Time axis tick interval</div>

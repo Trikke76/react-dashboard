@@ -1054,6 +1054,83 @@ $page->show();
         color: var(--subtle-text);
     }
 
+    .ts-hover-target {
+        fill: transparent;
+        cursor: crosshair;
+    }
+
+    .ts-crosshair-line {
+        stroke: rgba(197, 216, 241, 0.65);
+        stroke-width: 1;
+        stroke-dasharray: 4 3;
+    }
+
+    .ts-brush-rect {
+        fill: rgba(94, 147, 218, 0.22);
+        stroke: rgba(129, 177, 243, 0.95);
+        stroke-width: 1;
+    }
+
+    .ts-tooltip {
+        position: absolute;
+        z-index: 10;
+        min-width: 170px;
+        max-width: 260px;
+        background: rgba(9, 14, 20, 0.94);
+        border: 1px solid rgba(120, 154, 197, 0.55);
+        border-radius: 8px;
+        box-shadow: 0 12px 24px rgba(0, 0, 0, 0.45);
+        padding: 8px;
+        font-size: 12px;
+        color: #e6eef8;
+        pointer-events: none;
+    }
+
+    .ts-tooltip-time {
+        font-weight: 700;
+        margin-bottom: 6px;
+        color: #b8cbe2;
+    }
+
+    .ts-tooltip-row {
+        display: grid;
+        grid-template-columns: 10px 1fr auto;
+        align-items: center;
+        gap: 7px;
+        margin-bottom: 3px;
+    }
+
+    .ts-tooltip-row:last-child {
+        margin-bottom: 0;
+    }
+
+    .ts-tooltip-color {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        border: 1px solid rgba(255, 255, 255, 0.25);
+    }
+
+    .ts-tooltip-label {
+        color: #c9d9ec;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+    }
+
+    .ts-tooltip-value {
+        color: #f4f8ff;
+        font-weight: 700;
+        font-family: var(--font-mono);
+    }
+
+    .ts-zoom-reset {
+        position: absolute;
+        right: 10px;
+        top: 10px;
+        z-index: 9;
+    }
+
     @media (max-width: 760px) {
         .rd-color-popover {
             width: min(94vw, 420px);

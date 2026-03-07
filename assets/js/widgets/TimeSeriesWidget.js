@@ -177,12 +177,47 @@ window.ReactDashboardTimeSeriesWidget = (() => {
         return `${line} L ${lastX} ${base} L ${firstX} ${base} Z`;
     };
 
+    const clampNumber = (value, min, max) => Math.max(min, Math.min(max, value));
+
+    const findNearestPoint = (points, timeValue) => {
+        if (!Array.isArray(points) || points.length === 0 || !Number.isFinite(timeValue)) {
+            return null;
+        }
+
+        let low = 0;
+        let high = points.length - 1;
+        while (low <= high) {
+            const mid = Math.floor((low + high) / 2);
+            const midTime = Number(points[mid].t);
+            if (midTime < timeValue) {
+                low = mid + 1;
+            }
+            else if (midTime > timeValue) {
+                high = mid - 1;
+            }
+            else {
+                return points[mid];
+            }
+        }
+
+        const left = points[Math.max(0, high)];
+        const right = points[Math.min(points.length - 1, low)];
+        if (!left) {
+            return right || null;
+        }
+        if (!right) {
+            return left || null;
+        }
+        return Math.abs(Number(left.t) - timeValue) <= Math.abs(Number(right.t) - timeValue) ? left : right;
+    };
+
     window.TimeSeriesWidget = ({ remove, settings, updateSettings, apiClient, globalData }) => {
         const { useState, useEffect, useMemo, useRef, useCallback } = React;
         const ColorPickerField = window.ReactDashboardColorPickerField;
         const cfg = { ...DEFAULTS, ...sanitizeSettings(settings || {}) };
 
         const bodyRef = useRef(null);
+        const svgRef = useRef(null);
         const suggestionTimersRef = useRef(new Map());
 
         const [editMode, setEditMode] = useState(false);
@@ -200,6 +235,14 @@ window.ReactDashboardTimeSeriesWidget = (() => {
         });
         const [bodySize, setBodySize] = useState({ width: 640, height: 320 });
         const [model, setModel] = useState({ series: [], time_from: 0, time_to: 0 });
+        const [lookbackDraft, setLookbackDraft] = useState(String(cfg.lookbackHours));
+        const [historyPointsDraft, setHistoryPointsDraft] = useState(String(cfg.historyPoints));
+        const [lineWidthDraft, setLineWidthDraft] = useState(String(cfg.lineWidth));
+        const [fillOpacityDraft, setFillOpacityDraft] = useState(String(cfg.fillOpacity));
+        const [refreshSecDraft, setRefreshSecDraft] = useState(String(cfg.refreshSec));
+        const [hoverState, setHoverState] = useState(null);
+        const [dragZoom, setDragZoom] = useState(null);
+        const [zoomRange, setZoomRange] = useState(null);
 
         const seriesConfig = useMemo(() => parseSeries(cfg.seriesJson), [cfg.seriesJson]);
         const selectedHostIds = useMemo(() => parseIdsCsv(cfg.hostidsCsv), [cfg.hostidsCsv]);
@@ -388,6 +431,14 @@ window.ReactDashboardTimeSeriesWidget = (() => {
             suggestionTimersRef.current.clear();
         }, []);
 
+        useEffect(() => {
+            setLookbackDraft(String(cfg.lookbackHours));
+            setHistoryPointsDraft(String(cfg.historyPoints));
+            setLineWidthDraft(String(cfg.lineWidth));
+            setFillOpacityDraft(String(cfg.fillOpacity));
+            setRefreshSecDraft(String(cfg.refreshSec));
+        }, [cfg.lookbackHours, cfg.historyPoints, cfg.lineWidth, cfg.fillOpacity, cfg.refreshSec, editMode]);
+
         const chartSeries = useMemo(() => {
             if (!Array.isArray(model.series)) {
                 return [];
@@ -395,9 +446,63 @@ window.ReactDashboardTimeSeriesWidget = (() => {
             return model.series.filter((serie) => Array.isArray(serie.points) && serie.points.length > 0);
         }, [model.series]);
 
-        const allValues = useMemo(() => chartSeries.flatMap((serie) => serie.points.map((p) => Number(p.v)).filter(Number.isFinite)), [chartSeries]);
-        const valueMin = allValues.length > 0 ? Math.min(...allValues) : 0;
-        const valueMax = allValues.length > 0 ? Math.max(...allValues) : 1;
+        const preparedSeries = useMemo(() => chartSeries.map((serie, idx) => {
+            const points = (Array.isArray(serie.points) ? serie.points : [])
+                .map((point) => ({ t: Number(point.t), v: Number(point.v) }))
+                .filter((point) => Number.isFinite(point.t) && Number.isFinite(point.v))
+                .sort((a, b) => a.t - b.t);
+
+            return {
+                ...serie,
+                id: String(serie.series_id || serie.itemid || `s_${idx + 1}`),
+                color: String(serie.color || '#5794F2'),
+                points
+            };
+        }).filter((serie) => serie.points.length > 0), [chartSeries]);
+
+        const dataTimeFrom = Number(model.time_from) || Math.floor(Date.now() / 1000) - (cfg.lookbackHours * 3600);
+        const dataTimeTo = Number(model.time_to) || Math.floor(Date.now() / 1000);
+        const safeDataTimeTo = dataTimeTo <= dataTimeFrom ? dataTimeFrom + 1 : dataTimeTo;
+
+        const hasZoom = zoomRange && Number.isFinite(zoomRange.from) && Number.isFinite(zoomRange.to) && zoomRange.to > zoomRange.from;
+        const viewTimeFrom = hasZoom
+            ? clampNumber(Number(zoomRange.from), dataTimeFrom, safeDataTimeTo - 1)
+            : dataTimeFrom;
+        const viewTimeTo = hasZoom
+            ? clampNumber(Number(zoomRange.to), viewTimeFrom + 1, safeDataTimeTo)
+            : safeDataTimeTo;
+        const safeViewTimeTo = viewTimeTo <= viewTimeFrom ? viewTimeFrom + 1 : viewTimeTo;
+
+        useEffect(() => {
+            if (!hasZoom) {
+                return;
+            }
+            if (safeDataTimeTo <= dataTimeFrom + 1) {
+                setZoomRange(null);
+                return;
+            }
+            if (Number(zoomRange.to) <= dataTimeFrom || Number(zoomRange.from) >= safeDataTimeTo) {
+                setZoomRange(null);
+            }
+        }, [dataTimeFrom, safeDataTimeTo, hasZoom, zoomRange]);
+
+        const visibleValues = useMemo(() => {
+            const values = [];
+            preparedSeries.forEach((serie) => {
+                serie.points.forEach((point) => {
+                    if (point.t >= viewTimeFrom && point.t <= safeViewTimeTo) {
+                        values.push(point.v);
+                    }
+                });
+            });
+            if (values.length > 0) {
+                return values;
+            }
+            return preparedSeries.flatMap((serie) => serie.points.map((point) => point.v));
+        }, [preparedSeries, viewTimeFrom, safeViewTimeTo]);
+
+        const valueMin = visibleValues.length > 0 ? Math.min(...visibleValues) : 0;
+        const valueMax = visibleValues.length > 0 ? Math.max(...visibleValues) : 1;
         const valueRange = Math.max(0, valueMax - valueMin);
         const autoPadding = valueRange > 0 ? valueRange * 0.08 : Math.max(1, Math.abs(valueMax || 1) * 0.02);
         const autoYMin = valueMin - autoPadding;
@@ -409,35 +514,274 @@ window.ReactDashboardTimeSeriesWidget = (() => {
         const yMax = customYMax !== null ? customYMax : autoYMax;
         const safeYMax = yMax <= yMin ? yMin + 1 : yMax;
 
-        const timeFrom = Number(model.time_from) || Math.floor(Date.now() / 1000) - (cfg.lookbackHours * 3600);
-        const timeTo = Number(model.time_to) || Math.floor(Date.now() / 1000);
-        const safeTimeTo = timeTo <= timeFrom ? timeFrom + 1 : timeTo;
-
         const legendHeight = cfg.legendMode === 'hidden' ? 0 : (cfg.legendMode === 'table' ? 110 : 46);
         const chartPadding = { top: 12, right: 12, bottom: 20 + legendHeight, left: 42 };
         const plotWidth = Math.max(120, bodySize.width - chartPadding.left - chartPadding.right);
         const plotHeight = Math.max(90, bodySize.height - chartPadding.top - chartPadding.bottom);
 
-        const scaleX = (timestamp) => chartPadding.left + (((Number(timestamp) - timeFrom) / (safeTimeTo - timeFrom)) * plotWidth);
+        const scaleX = (timestamp) => chartPadding.left + (((Number(timestamp) - viewTimeFrom) / (safeViewTimeTo - viewTimeFrom)) * plotWidth);
         const scaleY = (value) => chartPadding.top + (plotHeight - (((Number(value) - yMin) / (safeYMax - yMin)) * plotHeight));
 
         const yTicks = 5;
         const xTicks = 6;
 
-        const legendRows = useMemo(() => chartSeries.map((serie) => {
-            const values = serie.points.map((point) => Number(point.v)).filter(Number.isFinite);
-            const last = values.length > 0 ? values[values.length - 1] : NaN;
-            const min = values.length > 0 ? Math.min(...values) : NaN;
-            const max = values.length > 0 ? Math.max(...values) : NaN;
+        const legendRows = useMemo(() => preparedSeries.map((serie) => {
+            const values = serie.points
+                .filter((point) => point.t >= viewTimeFrom && point.t <= safeViewTimeTo)
+                .map((point) => point.v);
+            const safeValues = values.length > 0 ? values : serie.points.map((point) => point.v);
+            const last = safeValues.length > 0 ? safeValues[safeValues.length - 1] : NaN;
+            const min = safeValues.length > 0 ? Math.min(...safeValues) : NaN;
+            const max = safeValues.length > 0 ? Math.max(...safeValues) : NaN;
             return {
-                id: String(serie.series_id || serie.itemid || Math.random()),
+                id: serie.id,
                 label: String(serie.label || serie.name || 'Series'),
-                color: String(serie.color || '#5794F2'),
+                color: serie.color,
                 last,
                 min,
                 max
             };
-        }), [chartSeries]);
+        }), [preparedSeries, viewTimeFrom, safeViewTimeTo]);
+
+        const pointerToLocal = useCallback((event) => {
+            if (!svgRef.current) {
+                return null;
+            }
+            const rect = svgRef.current.getBoundingClientRect();
+            if (rect.width <= 0 || rect.height <= 0) {
+                return null;
+            }
+            const x = ((event.clientX - rect.left) / rect.width) * bodySize.width;
+            const y = ((event.clientY - rect.top) / rect.height) * bodySize.height;
+            return { x, y };
+        }, [bodySize.height, bodySize.width]);
+
+        const isInsidePlot = useCallback((x, y) => (
+            x >= chartPadding.left
+            && x <= chartPadding.left + plotWidth
+            && y >= chartPadding.top
+            && y <= chartPadding.top + plotHeight
+        ), [chartPadding.left, chartPadding.top, plotHeight, plotWidth]);
+
+        const timeFromPlotX = useCallback((x) => {
+            const clampedX = clampNumber(x, chartPadding.left, chartPadding.left + plotWidth);
+            const ratio = (clampedX - chartPadding.left) / Math.max(1, plotWidth);
+            return viewTimeFrom + (ratio * (safeViewTimeTo - viewTimeFrom));
+        }, [chartPadding.left, plotWidth, safeViewTimeTo, viewTimeFrom]);
+
+        const updateHoverState = useCallback((x, y) => {
+            if (!isInsidePlot(x, y)) {
+                setHoverState(null);
+                return;
+            }
+            const clampedX = clampNumber(x, chartPadding.left, chartPadding.left + plotWidth);
+            const clampedY = clampNumber(y, chartPadding.top, chartPadding.top + plotHeight);
+            setHoverState({
+                x: clampedX,
+                y: clampedY,
+                t: timeFromPlotX(clampedX)
+            });
+        }, [chartPadding.left, chartPadding.top, isInsidePlot, plotHeight, plotWidth, timeFromPlotX]);
+
+        const applyDragZoom = useCallback((startX, endX) => {
+            const minX = Math.min(startX, endX);
+            const maxX = Math.max(startX, endX);
+            if ((maxX - minX) < 8) {
+                return;
+            }
+            const from = timeFromPlotX(minX);
+            const to = timeFromPlotX(maxX);
+            if (Number.isFinite(from) && Number.isFinite(to) && (to - from) >= 1) {
+                setZoomRange({ from, to });
+            }
+        }, [timeFromPlotX]);
+
+        const tooltipData = useMemo(() => {
+            if (!hoverState || !Number.isFinite(hoverState.t)) {
+                return null;
+            }
+            const rows = preparedSeries.map((serie) => {
+                const nearest = findNearestPoint(serie.points, hoverState.t);
+                if (!nearest) {
+                    return null;
+                }
+                return {
+                    id: serie.id,
+                    color: serie.color,
+                    label: String(serie.label || serie.name || 'Series'),
+                    point: nearest
+                };
+            }).filter(Boolean);
+
+            if (rows.length === 0) {
+                return null;
+            }
+
+            return {
+                time: hoverState.t,
+                rows
+            };
+        }, [hoverState, preparedSeries]);
+
+        const tooltipStyle = useMemo(() => {
+            if (!hoverState) {
+                return null;
+            }
+            const maxWidth = 260;
+            const left = clampNumber(hoverState.x + 12, 8, Math.max(8, bodySize.width - maxWidth - 8));
+            const top = clampNumber(hoverState.y - 12, 8, Math.max(8, bodySize.height - 140));
+            return {
+                left: `${left}px`,
+                top: `${top}px`
+            };
+        }, [bodySize.height, bodySize.width, hoverState]);
+
+        const brushBounds = useMemo(() => {
+            if (!dragZoom) {
+                return null;
+            }
+            const left = Math.min(dragZoom.startX, dragZoom.currentX);
+            const right = Math.max(dragZoom.startX, dragZoom.currentX);
+            return {
+                x: left,
+                w: Math.max(1, right - left),
+                y: chartPadding.top,
+                h: plotHeight
+            };
+        }, [chartPadding.top, dragZoom, plotHeight]);
+
+        const onChartMouseDown = (event) => {
+            const point = pointerToLocal(event);
+            if (!point || !isInsidePlot(point.x, point.y)) {
+                return;
+            }
+            const startX = clampNumber(point.x, chartPadding.left, chartPadding.left + plotWidth);
+            setDragZoom({ startX, currentX: startX });
+            setHoverState(null);
+        };
+
+        const onChartMouseMove = (event) => {
+            const point = pointerToLocal(event);
+            if (!point) {
+                return;
+            }
+
+            if (dragZoom) {
+                const currentX = clampNumber(point.x, chartPadding.left, chartPadding.left + plotWidth);
+                setDragZoom((prev) => (prev ? { ...prev, currentX } : prev));
+                return;
+            }
+
+            updateHoverState(point.x, point.y);
+        };
+
+        const onChartMouseUp = () => {
+            if (!dragZoom) {
+                return;
+            }
+            applyDragZoom(dragZoom.startX, dragZoom.currentX);
+            setDragZoom(null);
+        };
+
+        const onChartMouseLeave = () => {
+            if (!dragZoom) {
+                setHoverState(null);
+            }
+        };
+
+        const onChartDoubleClick = () => {
+            setZoomRange(null);
+        };
+
+        const commitLookbackDraft = () => {
+            const raw = String(lookbackDraft || '').trim();
+            if (raw === '') {
+                setLookbackDraft(String(cfg.lookbackHours));
+                return;
+            }
+            const parsed = Number(raw);
+            if (!Number.isFinite(parsed)) {
+                setLookbackDraft(String(cfg.lookbackHours));
+                return;
+            }
+            const next = clampInt(parsed, cfg.lookbackHours, 1, 336);
+            setLookbackDraft(String(next));
+            if (next !== Number(cfg.lookbackHours)) {
+                updateSettings({ lookbackHours: next });
+            }
+        };
+
+        const commitHistoryPointsDraft = () => {
+            const raw = String(historyPointsDraft || '').trim();
+            if (raw === '') {
+                setHistoryPointsDraft(String(cfg.historyPoints));
+                return;
+            }
+            const parsed = Number(raw);
+            if (!Number.isFinite(parsed)) {
+                setHistoryPointsDraft(String(cfg.historyPoints));
+                return;
+            }
+            const next = clampInt(parsed, cfg.historyPoints, 50, 2000);
+            setHistoryPointsDraft(String(next));
+            if (next !== Number(cfg.historyPoints)) {
+                updateSettings({ historyPoints: next });
+            }
+        };
+
+        const commitLineWidthDraft = () => {
+            const raw = String(lineWidthDraft || '').trim();
+            if (raw === '') {
+                setLineWidthDraft(String(cfg.lineWidth));
+                return;
+            }
+            const parsed = Number(raw.replace(/,/g, '.'));
+            if (!Number.isFinite(parsed)) {
+                setLineWidthDraft(String(cfg.lineWidth));
+                return;
+            }
+            const next = clampInt(parsed, cfg.lineWidth, 1, 8);
+            setLineWidthDraft(String(next));
+            if (next !== Number(cfg.lineWidth)) {
+                updateSettings({ lineWidth: next });
+            }
+        };
+
+        const commitFillOpacityDraft = () => {
+            const raw = String(fillOpacityDraft || '').trim();
+            if (raw === '') {
+                setFillOpacityDraft(String(cfg.fillOpacity));
+                return;
+            }
+            const parsed = Number(raw.replace(/,/g, '.'));
+            if (!Number.isFinite(parsed)) {
+                setFillOpacityDraft(String(cfg.fillOpacity));
+                return;
+            }
+            const next = clampInt(parsed, cfg.fillOpacity, 0, 100);
+            setFillOpacityDraft(String(next));
+            if (next !== Number(cfg.fillOpacity)) {
+                updateSettings({ fillOpacity: next });
+            }
+        };
+
+        const commitRefreshSecDraft = () => {
+            const raw = String(refreshSecDraft || '').trim();
+            if (raw === '') {
+                setRefreshSecDraft(String(cfg.refreshSec));
+                return;
+            }
+            const parsed = Number(raw.replace(/,/g, '.'));
+            if (!Number.isFinite(parsed)) {
+                setRefreshSecDraft(String(cfg.refreshSec));
+                return;
+            }
+            const next = clampInt(parsed, cfg.refreshSec, 5, 3600);
+            setRefreshSecDraft(String(next));
+            if (next !== Number(cfg.refreshSec)) {
+                updateSettings({ refreshSec: next });
+            }
+        };
 
         const renderEditorSection = (key, title, body) => (
             <section className="ts-editor-section" key={key}>
@@ -473,7 +817,12 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                         </div>
                     )}
 
-                    <svg className="ts-chart-svg" viewBox={`0 0 ${Math.max(1, bodySize.width)} ${Math.max(1, bodySize.height)}`} preserveAspectRatio="none">
+                    <svg
+                        ref={svgRef}
+                        className="ts-chart-svg"
+                        viewBox={`0 0 ${Math.max(1, bodySize.width)} ${Math.max(1, bodySize.height)}`}
+                        preserveAspectRatio="none"
+                    >
                         {cfg.showGrid && (
                             <g className="ts-grid-lines">
                                 {Array.from({ length: yTicks + 1 }).map((_, idx) => {
@@ -498,7 +847,7 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                 );
                             })}
                             {Array.from({ length: xTicks + 1 }).map((_, idx) => {
-                                const t = timeFrom + (((safeTimeTo - timeFrom) / xTicks) * idx);
+                                const t = viewTimeFrom + (((safeViewTimeTo - viewTimeFrom) / xTicks) * idx);
                                 const label = new Date(t * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                                 const x = chartPadding.left + ((plotWidth / xTicks) * idx);
                                 return (
@@ -510,10 +859,8 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                         </g>
 
                         <g className="ts-series-layer">
-                            {chartSeries.map((serie) => {
-                                const points = serie.points
-                                    .map((point) => ({ t: Number(point.t), v: Number(point.v) }))
-                                    .filter((point) => Number.isFinite(point.t) && Number.isFinite(point.v));
+                            {preparedSeries.map((serie) => {
+                                const points = serie.points.filter((point) => point.t >= viewTimeFrom && point.t <= safeViewTimeTo);
                                 if (points.length === 0) {
                                     return null;
                                 }
@@ -522,8 +869,8 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                 const lineWidth = clampInt(serie.line_width, cfg.lineWidth, 1, 8);
                                 const fillOpacity = clampInt(serie.fill_opacity, cfg.fillOpacity, 0, 100) / 100;
                                 const showPoints = Boolean(Number(serie.show_points)) || cfg.showPoints;
-                                const color = String(serie.color || '#5794F2');
-                                const key = String(serie.series_id || serie.itemid || Math.random());
+                                const color = serie.color;
+                                const key = serie.id;
 
                                 if (drawStyle === 'bars') {
                                     const minSpacing = points.length > 1
@@ -585,7 +932,50 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                 );
                             })}
                         </g>
+
+                        {(hoverState && !dragZoom) && (
+                            <g className="ts-crosshair">
+                                <line className="ts-crosshair-line" x1={hoverState.x} y1={chartPadding.top} x2={hoverState.x} y2={chartPadding.top + plotHeight} />
+                                <line className="ts-crosshair-line" x1={chartPadding.left} y1={hoverState.y} x2={chartPadding.left + plotWidth} y2={hoverState.y} />
+                            </g>
+                        )}
+
+                        {brushBounds && (
+                            <g className="ts-brush-layer">
+                                <rect className="ts-brush-rect" x={brushBounds.x} y={brushBounds.y} width={brushBounds.w} height={brushBounds.h} />
+                            </g>
+                        )}
+
+                        <rect
+                            className="ts-hover-target"
+                            x={chartPadding.left}
+                            y={chartPadding.top}
+                            width={plotWidth}
+                            height={plotHeight}
+                            onMouseDown={onChartMouseDown}
+                            onMouseMove={onChartMouseMove}
+                            onMouseUp={onChartMouseUp}
+                            onMouseLeave={onChartMouseLeave}
+                            onDoubleClick={onChartDoubleClick}
+                        />
                     </svg>
+
+                    {hasZoom && !editMode && (
+                        <button className="btn-zbx ts-zoom-reset" onClick={() => setZoomRange(null)}>Reset zoom</button>
+                    )}
+
+                    {!dragZoom && tooltipData && tooltipStyle && (
+                        <div className="ts-tooltip" style={tooltipStyle}>
+                            <div className="ts-tooltip-time">{new Date(tooltipData.time * 1000).toLocaleString()}</div>
+                            {tooltipData.rows.map((row) => (
+                                <div className="ts-tooltip-row" key={row.id}>
+                                    <span className="ts-tooltip-color" style={{ background: row.color }} />
+                                    <span className="ts-tooltip-label">{row.label}</span>
+                                    <span className="ts-tooltip-value">{formatLegendNumber(Number(row.point.v))}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
 
                     {loading && <div className="ts-overlay-msg">Loading...</div>}
                     {!loading && error && <div className="ts-overlay-msg ts-error">{error}</div>}
@@ -770,10 +1160,40 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                     </div>
 
                                     <div className="editor-label">Line width</div>
-                                    <div className="editor-control"><input type="number" min="1" max="8" value={cfg.lineWidth} onChange={(e) => updateSettings({ lineWidth: clampInt(e.target.value, cfg.lineWidth, 1, 8) })} /></div>
+                                    <div className="editor-control">
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            max="8"
+                                            value={lineWidthDraft}
+                                            onChange={(e) => setLineWidthDraft(e.target.value)}
+                                            onBlur={commitLineWidthDraft}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    e.preventDefault();
+                                                    commitLineWidthDraft();
+                                                }
+                                            }}
+                                        />
+                                    </div>
 
                                     <div className="editor-label">Fill opacity (%)</div>
-                                    <div className="editor-control"><input type="number" min="0" max="100" value={cfg.fillOpacity} onChange={(e) => updateSettings({ fillOpacity: clampInt(e.target.value, cfg.fillOpacity, 0, 100) })} /></div>
+                                    <div className="editor-control">
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            max="100"
+                                            value={fillOpacityDraft}
+                                            onChange={(e) => setFillOpacityDraft(e.target.value)}
+                                            onBlur={commitFillOpacityDraft}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    e.preventDefault();
+                                                    commitFillOpacityDraft();
+                                                }
+                                            }}
+                                        />
+                                    </div>
 
                                     <div className="editor-label">Show points</div>
                                     <div className="editor-control"><label><input type="checkbox" checked={cfg.showPoints} onChange={(e) => updateSettings({ showPoints: e.target.checked })} /> Points</label></div>
@@ -786,10 +1206,40 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                             {renderEditorSection('axis', 'Axis', (
                                 <>
                                     <div className="editor-label">Lookback (hours)</div>
-                                    <div className="editor-control"><input type="number" min="1" max="336" value={cfg.lookbackHours} onChange={(e) => updateSettings({ lookbackHours: clampInt(e.target.value, cfg.lookbackHours, 1, 336) })} /></div>
+                                    <div className="editor-control">
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            max="336"
+                                            value={lookbackDraft}
+                                            onChange={(e) => setLookbackDraft(e.target.value)}
+                                            onBlur={commitLookbackDraft}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    e.preventDefault();
+                                                    commitLookbackDraft();
+                                                }
+                                            }}
+                                        />
+                                    </div>
 
                                     <div className="editor-label">History points</div>
-                                    <div className="editor-control"><input type="number" min="50" max="2000" value={cfg.historyPoints} onChange={(e) => updateSettings({ historyPoints: clampInt(e.target.value, cfg.historyPoints, 50, 2000) })} /></div>
+                                    <div className="editor-control">
+                                        <input
+                                            type="number"
+                                            min="50"
+                                            max="2000"
+                                            value={historyPointsDraft}
+                                            onChange={(e) => setHistoryPointsDraft(e.target.value)}
+                                            onBlur={commitHistoryPointsDraft}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    e.preventDefault();
+                                                    commitHistoryPointsDraft();
+                                                }
+                                            }}
+                                        />
+                                    </div>
 
                                     <div className="editor-label">Y min</div>
                                     <div className="editor-control"><input type="text" value={cfg.yMin} placeholder="auto" onChange={(e) => updateSettings({ yMin: e.target.value })} /></div>
@@ -811,7 +1261,22 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                     </div>
 
                                     <div className="editor-label">Refresh (sec)</div>
-                                    <div className="editor-control"><input type="number" min="5" max="3600" value={cfg.refreshSec} onChange={(e) => updateSettings({ refreshSec: clampInt(e.target.value, cfg.refreshSec, 5, 3600) })} /></div>
+                                    <div className="editor-control">
+                                        <input
+                                            type="number"
+                                            min="5"
+                                            max="3600"
+                                            value={refreshSecDraft}
+                                            onChange={(e) => setRefreshSecDraft(e.target.value)}
+                                            onBlur={commitRefreshSecDraft}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    e.preventDefault();
+                                                    commitRefreshSecDraft();
+                                                }
+                                            }}
+                                        />
+                                    </div>
 
                                     <div className="editor-label">Show header</div>
                                     <div className="editor-control"><label><input type="checkbox" checked={cfg.showHeader} onChange={(e) => updateSettings({ showHeader: e.target.checked })} /> Header</label></div>
