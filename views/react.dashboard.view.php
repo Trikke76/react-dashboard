@@ -150,6 +150,7 @@ $page->show();
 
     .dashboard-main {
         position: relative;
+        min-height: calc(100vh - 150px);
     }
 
     .dashboard-editor-dock {
@@ -185,6 +186,20 @@ $page->show();
         background: linear-gradient(180deg, rgba(26, 40, 56, 0.98), rgba(16, 24, 38, 0.98));
     }
 
+    .dashboard-editor-resize-handle {
+        width: 8px;
+        min-width: 8px;
+        cursor: col-resize;
+        pointer-events: auto;
+        background: linear-gradient(180deg, rgba(54, 78, 108, 0.15), rgba(36, 54, 77, 0.15));
+        border-left: 1px solid rgba(121, 152, 186, 0.28);
+        border-right: 1px solid rgba(121, 152, 186, 0.28);
+    }
+
+    .dashboard-editor-resize-handle:hover {
+        background: linear-gradient(180deg, rgba(72, 103, 140, 0.34), rgba(52, 80, 112, 0.34));
+    }
+
     .dashboard-editor-sidebar {
         width: min(460px, 42vw);
         min-width: 360px;
@@ -201,6 +216,10 @@ $page->show();
     .dashboard-editor-dock.is-collapsed .dashboard-editor-toggle {
         border-right: 1px solid var(--border-color);
         border-radius: 8px;
+    }
+
+    .dashboard-editor-dock.is-collapsed .dashboard-editor-resize-handle {
+        display: none;
     }
 
     .dashboard-editor-sidebar.is-collapsed {
@@ -1604,6 +1623,7 @@ $page->show();
         .dashboard-main {
             display: flex;
             flex-direction: column;
+            min-height: 0;
         }
         .dashboard-editor-dock {
             position: static;
@@ -1617,6 +1637,9 @@ $page->show();
             border-right: 1px solid var(--border-color);
             border-bottom: 0;
             border-radius: 8px 8px 0 0;
+        }
+        .dashboard-editor-resize-handle {
+            display: none;
         }
         .dashboard-editor-sidebar {
             width: 100%;
@@ -2031,6 +2054,15 @@ if (is_file($timestate_widget_file)) {
         const [activeEditorWidgetId, setActiveEditorWidgetId] = useState(null);
         const [editorHostEl, setEditorHostEl] = useState(null);
         const [isEditorSidebarOpen, setIsEditorSidebarOpen] = useState(false);
+        const [editorSidebarWidth, setEditorSidebarWidth] = useState(() => {
+            const raw = Number(localStorage.getItem('zbx_editor_sidebar_width_v1'));
+            if (!Number.isFinite(raw)) {
+                return 460;
+            }
+            return Math.max(320, Math.min(920, Math.round(raw)));
+        });
+        const [isEditorSidebarResizing, setIsEditorSidebarResizing] = useState(false);
+        const editorSidebarResizeRef = useRef({ startX: 0, startWidth: 460 });
         const setEditorHostRef = useCallback((node) => {
             setEditorHostEl(node || null);
         }, []);
@@ -2126,6 +2158,24 @@ if (is_file($timestate_widget_file)) {
                 return prev === widgetId ? null : widgetId;
             });
         }, []);
+
+        const clampEditorSidebarWidth = useCallback((value) => {
+            const viewport = Math.max(360, Math.floor(window.innerWidth || 1280));
+            const maxWidth = Math.max(360, Math.floor(viewport * 0.8));
+            return Math.max(320, Math.min(maxWidth, Math.round(Number(value) || 460)));
+        }, []);
+
+        const startEditorSidebarResize = useCallback((event) => {
+            if (window.innerWidth <= 900 || !isEditorSidebarOpen) {
+                return;
+            }
+            event.preventDefault();
+            editorSidebarResizeRef.current = {
+                startX: Number(event.clientX) || 0,
+                startWidth: Number(editorSidebarWidth) || 460
+            };
+            setIsEditorSidebarResizing(true);
+        }, [editorSidebarWidth, isEditorSidebarOpen]);
 
         const activeEditorWidget = useMemo(() => {
             if (!activeEditorWidgetId) {
@@ -2238,7 +2288,54 @@ if (is_file($timestate_widget_file)) {
             }
         }, [layout, activeEditorWidgetId]);
 
+        useEffect(() => {
+            if (!isEditorSidebarResizing) {
+                return undefined;
+            }
+
+            const onMouseMove = (event) => {
+                const delta = editorSidebarResizeRef.current.startX - (Number(event.clientX) || 0);
+                const nextWidth = clampEditorSidebarWidth(editorSidebarResizeRef.current.startWidth + delta);
+                setEditorSidebarWidth(nextWidth);
+            };
+
+            const onMouseUp = () => {
+                setIsEditorSidebarResizing(false);
+            };
+
+            const previousCursor = document.body.style.cursor;
+            const previousUserSelect = document.body.style.userSelect;
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+
+            return () => {
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+                document.body.style.cursor = previousCursor;
+                document.body.style.userSelect = previousUserSelect;
+            };
+        }, [clampEditorSidebarWidth, isEditorSidebarResizing]);
+
+        useEffect(() => {
+            localStorage.setItem('zbx_editor_sidebar_width_v1', String(editorSidebarWidth));
+        }, [editorSidebarWidth]);
+
+        useEffect(() => {
+            const onWindowResize = () => {
+                setEditorSidebarWidth((prev) => clampEditorSidebarWidth(prev));
+            };
+
+            window.addEventListener('resize', onWindowResize);
+            return () => window.removeEventListener('resize', onWindowResize);
+        }, [clampEditorSidebarWidth]);
+
         const gridCols = gridWidth >= 1600 ? 36 : (gridWidth >= 1200 ? 24 : 12);
+        const editorSidebarStyle = isEditorSidebarOpen
+            ? { width: `${clampEditorSidebarWidth(editorSidebarWidth)}px`, minWidth: `${clampEditorSidebarWidth(editorSidebarWidth)}px` }
+            : undefined;
         const refreshedAtLabel = globalData.refreshedAt > 0
             ? new Date(globalData.refreshedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
             : '--:--:--';
@@ -2367,7 +2464,18 @@ if (is_file($timestate_widget_file)) {
                             {isEditorSidebarOpen ? '▸' : '◂'}
                         </button>
 
-                        <aside className={`dashboard-editor-sidebar ${isEditorSidebarOpen ? 'is-open' : 'is-collapsed'}`}>
+                        <div
+                            className="dashboard-editor-resize-handle"
+                            role="separator"
+                            aria-orientation="vertical"
+                            aria-label="Resize editor panel"
+                            onMouseDown={startEditorSidebarResize}
+                        />
+
+                        <aside
+                            className={`dashboard-editor-sidebar ${isEditorSidebarOpen ? 'is-open' : 'is-collapsed'}`}
+                            style={editorSidebarStyle}
+                        >
                             <div className="dashboard-editor-header">
                                 <div className="dashboard-editor-title">
                                     {activeEditorWidget

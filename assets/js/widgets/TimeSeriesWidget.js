@@ -10,8 +10,6 @@ window.ReactDashboardTimeSeriesWidget = (() => {
         historyPoints: 500,
         legendMode: 'list',
         showGrid: true,
-        lineWidth: 2,
-        fillOpacity: 0,
         yMin: '',
         yMax: '',
         seriesJson: ''
@@ -64,6 +62,10 @@ window.ReactDashboardTimeSeriesWidget = (() => {
         const source = (raw && typeof raw === 'object') ? raw : {};
         const drawStyle = ['line', 'points', 'bars'].includes(source.drawStyle) ? source.drawStyle : 'line';
         const axis = String(source.axis || '').toLowerCase() === 'right' ? 'right' : 'left';
+        const lineWidthRaw = Number(source.lineWidth);
+        const lineWidth = Number.isFinite(lineWidthRaw) && lineWidthRaw > 0
+            ? clampInt(lineWidthRaw, 2, 1, 8)
+            : 2;
 
         return {
             id: safeSeriesId(source.id, idx),
@@ -79,9 +81,8 @@ window.ReactDashboardTimeSeriesWidget = (() => {
             axis,
             showInLegend: source.showInLegend !== false,
             drawStyle,
-            lineWidth: clampInt(source.lineWidth, 0, 0, 8),
+            lineWidth,
             fillOpacity: clampInt(source.fillOpacity, 0, 0, 100),
-            showPoints: toBoolean(source.showPoints, false),
             showPercentileLine: toBoolean(source.showPercentileLine, false),
             percentileValue: clampInt(source.percentileValue, 95, 0, 100)
         };
@@ -128,8 +129,6 @@ window.ReactDashboardTimeSeriesWidget = (() => {
             historyPoints: clampInt(base.historyPoints, DEFAULTS.historyPoints, 50, 2000),
             legendMode,
             showGrid: toBoolean(base.showGrid, DEFAULTS.showGrid),
-            lineWidth: clampInt(base.lineWidth, DEFAULTS.lineWidth, 1, 8),
-            fillOpacity: clampInt(base.fillOpacity, DEFAULTS.fillOpacity, 0, 100),
             yMin: yMin.slice(0, 32),
             yMax: yMax.slice(0, 32),
             seriesJson: serializeSeries(parseSeries(base.seriesJson))
@@ -390,8 +389,6 @@ window.ReactDashboardTimeSeriesWidget = (() => {
         const [model, setModel] = useState({ series: [], time_from: 0, time_to: 0 });
         const [lookbackDraft, setLookbackDraft] = useState(String(cfg.lookbackHours));
         const [historyPointsDraft, setHistoryPointsDraft] = useState(String(cfg.historyPoints));
-        const [lineWidthDraft, setLineWidthDraft] = useState(String(cfg.lineWidth));
-        const [fillOpacityDraft, setFillOpacityDraft] = useState(String(cfg.fillOpacity));
         const [refreshSecDraft, setRefreshSecDraft] = useState(String(cfg.refreshSec));
         const [hoverState, setHoverState] = useState(null);
         const [dragZoom, setDragZoom] = useState(null);
@@ -507,9 +504,8 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                         axis: row.axis || 'left',
                         showInLegend: row.showInLegend !== false ? 1 : 0,
                         drawStyle: row.drawStyle || 'line',
-                        lineWidth: row.lineWidth > 0 ? row.lineWidth : cfg.lineWidth,
-                        fillOpacity: row.fillOpacity > 0 ? row.fillOpacity : cfg.fillOpacity,
-                        showPoints: row.showPoints ? 1 : 0
+                        lineWidth: clampInt(row.lineWidth, 2, 1, 8),
+                        fillOpacity: clampInt(row.fillOpacity, 0, 0, 100)
                     })))
                 }, 5000);
 
@@ -530,7 +526,7 @@ window.ReactDashboardTimeSeriesWidget = (() => {
             finally {
                 setLoading(false);
             }
-        }, [apiClient, cfg.fillOpacity, cfg.historyPoints, cfg.lineWidth, cfg.lookbackHours, selectedHostIds, seriesConfig]);
+        }, [apiClient, cfg.historyPoints, cfg.lookbackHours, selectedHostIds, seriesConfig]);
 
         useEffect(() => {
             fetchSeriesData();
@@ -645,10 +641,8 @@ window.ReactDashboardTimeSeriesWidget = (() => {
         useEffect(() => {
             setLookbackDraft(String(cfg.lookbackHours));
             setHistoryPointsDraft(String(cfg.historyPoints));
-            setLineWidthDraft(String(cfg.lineWidth));
-            setFillOpacityDraft(String(cfg.fillOpacity));
             setRefreshSecDraft(String(cfg.refreshSec));
-        }, [cfg.lookbackHours, cfg.historyPoints, cfg.lineWidth, cfg.fillOpacity, cfg.refreshSec, editMode]);
+        }, [cfg.lookbackHours, cfg.historyPoints, cfg.refreshSec, editMode]);
 
         const chartSeries = useMemo(() => {
             if (!Array.isArray(model.series)) {
@@ -789,9 +783,8 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                 }
 
                 const drawStyle = ['line', 'points', 'bars'].includes(serie.draw_style) ? serie.draw_style : 'line';
-                const lineWidth = clampInt(serie.line_width, cfg.lineWidth, 1, 8);
-                const fillOpacity = clampInt(serie.fill_opacity, cfg.fillOpacity, 0, 100) / 100;
-                const showPoints = Boolean(Number(serie.show_points));
+                const lineWidth = clampInt(serie.line_width, 2, 1, 8);
+                const fillOpacity = clampInt(serie.fill_opacity, 0, 0, 100) / 100;
 
                 const sampledForLine = downsampleMinMaxByBuckets(visiblePoints, maxLineVertices);
                 const sampledForBars = aggregatePointsByTimeBuckets(visiblePoints, viewTimeFrom, safeViewTimeTo, targetBarBuckets, 'avg');
@@ -806,7 +799,6 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                     drawStyle,
                     lineWidth,
                     fillOpacity,
-                    showPoints,
                     renderPoints,
                     markerPoints
                 };
@@ -815,8 +807,6 @@ window.ReactDashboardTimeSeriesWidget = (() => {
             preparedSeries,
             viewTimeFrom,
             safeViewTimeTo,
-            cfg.lineWidth,
-            cfg.fillOpacity,
             maxLineVertices,
             maxPointMarkers,
             targetBarBuckets
@@ -1062,42 +1052,6 @@ window.ReactDashboardTimeSeriesWidget = (() => {
             }
         };
 
-        const commitLineWidthDraft = () => {
-            const raw = String(lineWidthDraft || '').trim();
-            if (raw === '') {
-                setLineWidthDraft(String(cfg.lineWidth));
-                return;
-            }
-            const parsed = Number(raw.replace(/,/g, '.'));
-            if (!Number.isFinite(parsed)) {
-                setLineWidthDraft(String(cfg.lineWidth));
-                return;
-            }
-            const next = clampInt(parsed, cfg.lineWidth, 1, 8);
-            setLineWidthDraft(String(next));
-            if (next !== Number(cfg.lineWidth)) {
-                updateSettings({ lineWidth: next });
-            }
-        };
-
-        const commitFillOpacityDraft = () => {
-            const raw = String(fillOpacityDraft || '').trim();
-            if (raw === '') {
-                setFillOpacityDraft(String(cfg.fillOpacity));
-                return;
-            }
-            const parsed = Number(raw.replace(/,/g, '.'));
-            if (!Number.isFinite(parsed)) {
-                setFillOpacityDraft(String(cfg.fillOpacity));
-                return;
-            }
-            const next = clampInt(parsed, cfg.fillOpacity, 0, 100);
-            setFillOpacityDraft(String(next));
-            if (next !== Number(cfg.fillOpacity)) {
-                updateSettings({ fillOpacity: next });
-            }
-        };
-
         const commitRefreshSecDraft = () => {
             const raw = String(refreshSecDraft || '').trim();
             if (raw === '') {
@@ -1227,7 +1181,6 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                 const drawStyle = serie.drawStyle;
                                 const lineWidth = serie.lineWidth;
                                 const fillOpacity = serie.fillOpacity;
-                                const showPoints = serie.showPoints;
                                 const color = serie.color;
                                 const key = serie.id;
                                 const useRightAxis = hasRightAxis && serie.axis === 'right';
@@ -1276,7 +1229,7 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                     <g key={key}>
                                         {areaPath !== '' && <path d={areaPath} fill={color} opacity={fillOpacity.toFixed(2)} />}
                                         {drawStyle !== 'points' && <path d={linePath} fill="none" stroke={color} strokeWidth={lineWidth} strokeLinejoin="round" strokeLinecap="round" />}
-                                        {(drawStyle === 'points' || showPoints) && serie.markerPoints
+                                        {drawStyle === 'points' && serie.markerPoints
                                             .map((point, idx) => (
                                                 <circle
                                                     key={`${key}-pt-${idx}`}
@@ -1601,17 +1554,6 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                                                 )}
                                                             </div>
 
-                                                            <div className="editor-label">Show points</div>
-                                                            <div className="editor-control">
-                                                                <label>
-                                                                    <input
-                                                                        type="checkbox"
-                                                                        checked={row.showPoints === true}
-                                                                        onChange={(e) => upsertSeriesRow(row.id, { showPoints: e.target.checked })}
-                                                                    /> Force points for this series
-                                                                </label>
-                                                            </div>
-
                                                             <div className="editor-label">Percentile line</div>
                                                             <div className="editor-control">
                                                                 <label>
@@ -1650,17 +1592,16 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                                             <div className="editor-control">
                                                                 <input
                                                                     type="number"
-                                                                    min="0"
+                                                                    min="1"
                                                                     max="8"
-                                                                    value={Number(row.lineWidth || 0)}
+                                                                    value={Number(row.lineWidth || 2)}
                                                                     onChange={(e) => {
                                                                         const raw = String(e.target.value || '').trim();
                                                                         const parsed = Number(raw);
-                                                                        const next = Number.isFinite(parsed) ? clampInt(parsed, 0, 0, 8) : 0;
+                                                                        const next = Number.isFinite(parsed) ? clampInt(parsed, 2, 1, 8) : 2;
                                                                         upsertSeriesRow(row.id, { lineWidth: next });
                                                                     }}
                                                                 />
-                                                                <div className="editor-subtle">0 = inherit panel default</div>
                                                             </div>
 
                                                             <div className="editor-label">Fill opacity (%)</div>
@@ -1677,7 +1618,6 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                                                         upsertSeriesRow(row.id, { fillOpacity: next });
                                                                     }}
                                                                 />
-                                                                <div className="editor-subtle">0 = inherit panel default</div>
                                                             </div>
                                                         </>
                                                     ))}
@@ -1719,50 +1659,14 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                 </>
                             ))}
 
-                            {renderEditorSection('display', 'Display defaults', (
+                            {renderEditorSection('display', 'Display global', (
                                 <>
-                                    <div className="editor-label">Line width</div>
-                                    <div className="editor-control">
-                                        <input
-                                            type="number"
-                                            min="1"
-                                            max="8"
-                                            value={lineWidthDraft}
-                                            onChange={(e) => setLineWidthDraft(e.target.value)}
-                                            onBlur={commitLineWidthDraft}
-                                            onKeyDown={(e) => {
-                                                if (e.key === 'Enter') {
-                                                    e.preventDefault();
-                                                    commitLineWidthDraft();
-                                                }
-                                            }}
-                                        />
-                                    </div>
-
-                                    <div className="editor-label">Fill opacity (%)</div>
-                                    <div className="editor-control">
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            max="100"
-                                            value={fillOpacityDraft}
-                                            onChange={(e) => setFillOpacityDraft(e.target.value)}
-                                            onBlur={commitFillOpacityDraft}
-                                            onKeyDown={(e) => {
-                                                if (e.key === 'Enter') {
-                                                    e.preventDefault();
-                                                    commitFillOpacityDraft();
-                                                }
-                                            }}
-                                        />
-                                    </div>
-
                                     <div className="editor-label">Show grid</div>
                                     <div className="editor-control"><label><input type="checkbox" checked={cfg.showGrid} onChange={(e) => updateSettings({ showGrid: e.target.checked })} /> Grid lines</label></div>
                                 </>
                             ))}
 
-                            {renderEditorSection('axis', 'Axis & range', (
+                            {renderEditorSection('axis', 'Axis & range global', (
                                 <>
                                     <div className="editor-label">Lookback (hours)</div>
                                     <div className="editor-control">
@@ -1800,10 +1704,10 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                         />
                                     </div>
 
-                                    <div className="editor-label">Y min</div>
+                                    <div className="editor-label">Y min (global)</div>
                                     <div className="editor-control"><input type="text" value={cfg.yMin} placeholder="auto" onChange={(e) => updateSettings({ yMin: e.target.value })} /></div>
 
-                                    <div className="editor-label">Y max</div>
+                                    <div className="editor-label">Y max (global)</div>
                                     <div className="editor-control"><input type="text" value={cfg.yMax} placeholder="auto" onChange={(e) => updateSettings({ yMax: e.target.value })} /></div>
                                 </>
                             ))}
