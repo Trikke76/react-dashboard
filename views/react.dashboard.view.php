@@ -752,6 +752,21 @@ $page->show();
         align-items: center;
     }
 
+    .ts-threshold-head,
+    .ts-threshold-row {
+        display: grid;
+        grid-template-columns: 84px 84px 84px 72px 30px;
+        gap: 6px;
+        align-items: center;
+    }
+
+    .ts-threshold-head {
+        color: var(--subtle-text);
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+    }
+
     .rd-color-picker {
         position: relative;
         display: inline-flex;
@@ -1616,6 +1631,13 @@ $page->show();
         }
         .editor-mapping-row {
             grid-template-columns: 1fr;
+        }
+        .ts-threshold-head,
+        .ts-threshold-row {
+            grid-template-columns: 1fr;
+        }
+        .ts-threshold-head {
+            display: none;
         }
         .editor-grid { grid-template-columns: 1fr; }
         .editor-dataset-grid { grid-template-columns: 1fr; }

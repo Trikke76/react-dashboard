@@ -76,7 +76,7 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                     }
                     const color = toHex(source.color, '#E24D42');
                     const fill = clampInt(source.fill, 12, 0, 100);
-                    const label = toText(source.label, `T${idx + 1}`, 40).trim();
+                    const label = toText(source.label, `T${idx + 1}`, 4).trim();
                     return {
                         id: String(source.id || `thr_${idx + 1}`),
                         value,
@@ -107,7 +107,7 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                     value,
                     color: toHex(source.color, '#E24D42'),
                     fill: clampInt(source.fill, 12, 0, 100),
-                    label: toText(source.label, `T${idx + 1}`, 40).trim() || `T${idx + 1}`
+                    label: toText(source.label, `T${idx + 1}`, 4).trim() || `T${idx + 1}`
                 };
             })
             .filter(Boolean)
@@ -2167,24 +2167,37 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                             {thresholdRows.length === 0 && (
                                                 <div className="editor-subtle">No thresholds configured.</div>
                                             )}
+                                            {thresholdRows.length > 0 && (
+                                                <div className="ts-threshold-head">
+                                                    <span>Value</span>
+                                                    <span>Label</span>
+                                                    <span>Fill %</span>
+                                                    <span>Color</span>
+                                                    <span />
+                                                </div>
+                                            )}
                                             {thresholdRows.map((row) => (
-                                                <div className="editor-mapping-row" key={row.id}>
+                                                <div className="ts-threshold-row" key={row.id}>
                                                     <input
                                                         type="number"
+                                                        min="-9999"
+                                                        max="9999"
+                                                        step="0.01"
                                                         value={Number(row.value)}
                                                         onChange={(e) => {
                                                             const parsed = Number(String(e.target.value || '').replace(/,/g, '.'));
                                                             if (Number.isFinite(parsed)) {
-                                                                patchThresholdRow(row.id, { value: parsed });
+                                                                patchThresholdRow(row.id, { value: Math.max(-9999, Math.min(9999, parsed)) });
                                                             }
                                                         }}
-                                                        placeholder="Value"
+                                                        placeholder="0"
                                                     />
                                                     <input
                                                         type="text"
                                                         value={row.label}
-                                                        onChange={(e) => patchThresholdRow(row.id, { label: e.target.value })}
-                                                        placeholder="Label"
+                                                        maxLength={4}
+                                                        onChange={(e) => patchThresholdRow(row.id, { label: String(e.target.value || '').slice(0, 4) })}
+                                                        placeholder="T1"
                                                     />
                                                     <input
                                                         type="number"
@@ -2196,7 +2209,7 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                                             const nextFill = Number.isFinite(parsed) ? clampInt(parsed, 12, 0, 100) : 12;
                                                             patchThresholdRow(row.id, { fill: nextFill });
                                                         }}
-                                                        placeholder="Fill %"
+                                                        placeholder="0"
                                                     />
                                                     {ColorPickerField ? (
                                                         <ColorPickerField
