@@ -10,6 +10,9 @@ window.ReactDashboardTimeSeriesWidget = (() => {
         historyPoints: 500,
         legendMode: 'list',
         showGrid: true,
+        stackMode: 'off',
+        lineInterpolation: 'linear',
+        thresholdsJson: '',
         yMin: '',
         yMax: '',
         seriesJson: ''
@@ -52,6 +55,63 @@ window.ReactDashboardTimeSeriesWidget = (() => {
             .map((token) => token.trim())
             .filter((token) => /^\d+$/.test(token))
     ));
+
+    const parseThresholds = (raw) => {
+        const text = String(raw || '').trim();
+        if (text === '') {
+            return [];
+        }
+        try {
+            const parsed = JSON.parse(text);
+            if (!Array.isArray(parsed)) {
+                return [];
+            }
+            return parsed
+                .slice(0, 12)
+                .map((entry, idx) => {
+                    const source = (entry && typeof entry === 'object') ? entry : {};
+                    const value = Number(source.value);
+                    if (!Number.isFinite(value)) {
+                        return null;
+                    }
+                    const color = toHex(source.color, '#E24D42');
+                    const fill = clampInt(source.fill, 12, 0, 100);
+                    const label = toText(source.label, `T${idx + 1}`, 40).trim();
+                    return {
+                        id: String(source.id || `thr_${idx + 1}`),
+                        value,
+                        color,
+                        fill,
+                        label: label || `T${idx + 1}`
+                    };
+                })
+                .filter(Boolean)
+                .sort((a, b) => a.value - b.value);
+        }
+        catch (_err) {
+            return [];
+        }
+    };
+
+    const serializeThresholds = (rows) => JSON.stringify(
+        (Array.isArray(rows) ? rows : [])
+            .slice(0, 12)
+            .map((row, idx) => {
+                const source = (row && typeof row === 'object') ? row : {};
+                const value = Number(source.value);
+                if (!Number.isFinite(value)) {
+                    return null;
+                }
+                return {
+                    id: String(source.id || `thr_${idx + 1}`),
+                    value,
+                    color: toHex(source.color, '#E24D42'),
+                    fill: clampInt(source.fill, 12, 0, 100),
+                    label: toText(source.label, `T${idx + 1}`, 40).trim() || `T${idx + 1}`
+                };
+            })
+            .filter(Boolean)
+    );
 
     const safeSeriesId = (value, idx) => {
         const raw = String(value || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 80);
@@ -115,6 +175,8 @@ window.ReactDashboardTimeSeriesWidget = (() => {
     const sanitizeSettings = (raw) => {
         const base = (raw && typeof raw === 'object') ? raw : {};
         const legendMode = ['hidden', 'list', 'table'].includes(base.legendMode) ? base.legendMode : DEFAULTS.legendMode;
+        const stackMode = ['off', 'normal', 'percent'].includes(base.stackMode) ? base.stackMode : DEFAULTS.stackMode;
+        const lineInterpolation = ['linear', 'smooth', 'step'].includes(base.lineInterpolation) ? base.lineInterpolation : DEFAULTS.lineInterpolation;
         const yMin = String(base.yMin ?? '').trim();
         const yMax = String(base.yMax ?? '').trim();
 
@@ -129,6 +191,9 @@ window.ReactDashboardTimeSeriesWidget = (() => {
             historyPoints: clampInt(base.historyPoints, DEFAULTS.historyPoints, 50, 2000),
             legendMode,
             showGrid: toBoolean(base.showGrid, DEFAULTS.showGrid),
+            stackMode,
+            lineInterpolation,
+            thresholdsJson: serializeThresholds(parseThresholds(base.thresholdsJson)),
             yMin: yMin.slice(0, 32),
             yMax: yMax.slice(0, 32),
             seriesJson: serializeSeries(parseSeries(base.seriesJson))
@@ -154,20 +219,50 @@ window.ReactDashboardTimeSeriesWidget = (() => {
         return Number.isFinite(parsed) ? parsed : null;
     };
 
-    const buildLinePath = (points, scaleX, scaleY) => {
+    const buildLinePath = (points, scaleX, scaleY, interpolation = 'linear') => {
         if (!Array.isArray(points) || points.length === 0) {
             return '';
         }
+
+        if (interpolation === 'step') {
+            const firstX = scaleX(points[0].t).toFixed(2);
+            const firstY = scaleY(points[0].v).toFixed(2);
+            let d = `M ${firstX} ${firstY}`;
+            for (let idx = 1; idx < points.length; idx += 1) {
+                const x = scaleX(points[idx].t).toFixed(2);
+                const y = scaleY(points[idx].v).toFixed(2);
+                d += ` L ${x} ${scaleY(points[idx - 1].v).toFixed(2)} L ${x} ${y}`;
+            }
+            return d;
+        }
+
+        if (interpolation === 'smooth' && points.length > 2) {
+            const coords = points.map((point) => ({ x: scaleX(point.t), y: scaleY(point.v) }));
+            let d = `M ${coords[0].x.toFixed(2)} ${coords[0].y.toFixed(2)}`;
+            for (let idx = 0; idx < coords.length - 1; idx += 1) {
+                const prev = coords[Math.max(0, idx - 1)];
+                const cur = coords[idx];
+                const next = coords[idx + 1];
+                const next2 = coords[Math.min(coords.length - 1, idx + 2)];
+                const cp1x = cur.x + ((next.x - prev.x) / 6);
+                const cp1y = cur.y + ((next.y - prev.y) / 6);
+                const cp2x = next.x - ((next2.x - cur.x) / 6);
+                const cp2y = next.y - ((next2.y - cur.y) / 6);
+                d += ` C ${cp1x.toFixed(2)} ${cp1y.toFixed(2)}, ${cp2x.toFixed(2)} ${cp2y.toFixed(2)}, ${next.x.toFixed(2)} ${next.y.toFixed(2)}`;
+            }
+            return d;
+        }
+
         return points
             .map((point, idx) => `${idx === 0 ? 'M' : 'L'} ${scaleX(point.t).toFixed(2)} ${scaleY(point.v).toFixed(2)}`)
             .join(' ');
     };
 
-    const buildAreaPath = (points, scaleX, scaleY, baseY) => {
+    const buildAreaPath = (points, scaleX, scaleY, baseY, interpolation = 'linear') => {
         if (!Array.isArray(points) || points.length === 0) {
             return '';
         }
-        const line = buildLinePath(points, scaleX, scaleY);
+        const line = buildLinePath(points, scaleX, scaleY, interpolation);
         if (line === '') {
             return '';
         }
@@ -175,6 +270,24 @@ window.ReactDashboardTimeSeriesWidget = (() => {
         const lastX = scaleX(points[points.length - 1].t).toFixed(2);
         const base = baseY.toFixed(2);
         return `${line} L ${lastX} ${base} L ${firstX} ${base} Z`;
+    };
+
+    const buildStackAreaPath = (points, scaleX, scaleY) => {
+        if (!Array.isArray(points) || points.length === 0) {
+            return '';
+        }
+        const valid = points.filter((point) => Number.isFinite(point.v) && Number.isFinite(point.baseV));
+        if (valid.length === 0) {
+            return '';
+        }
+
+        const top = valid.map((point, idx) => `${idx === 0 ? 'M' : 'L'} ${scaleX(point.t).toFixed(2)} ${scaleY(point.v).toFixed(2)}`).join(' ');
+        const base = valid
+            .slice()
+            .reverse()
+            .map((point) => `L ${scaleX(point.t).toFixed(2)} ${scaleY(point.baseV).toFixed(2)}`)
+            .join(' ');
+        return `${top} ${base} Z`;
     };
 
     const clampNumber = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -338,6 +451,54 @@ window.ReactDashboardTimeSeriesWidget = (() => {
             });
     };
 
+    const aggregatePointsAlignedByTimeBuckets = (points, timeFrom, timeTo, bucketCount, mode = 'avg') => {
+        const safeBucketCount = Math.max(2, Math.floor(Number(bucketCount) || 0));
+        const range = Math.max(1, Number(timeTo) - Number(timeFrom));
+        const bucketSpan = range / safeBucketCount;
+        if (!Number.isFinite(bucketSpan) || bucketSpan <= 0) {
+            return [];
+        }
+
+        const buckets = Array.from({ length: safeBucketCount }, (_, idx) => ({
+            idx,
+            t: timeFrom + ((idx + 0.5) * bucketSpan),
+            sum: 0,
+            count: 0,
+            min: null,
+            max: null,
+            lastV: null
+        }));
+
+        for (let idx = 0; idx < points.length; idx += 1) {
+            const point = points[idx];
+            const rawBucketIdx = Math.floor((point.t - timeFrom) / bucketSpan);
+            const bucketIdx = Math.max(0, Math.min(safeBucketCount - 1, rawBucketIdx));
+            const bucket = buckets[bucketIdx];
+            bucket.sum += point.v;
+            bucket.count += 1;
+            bucket.min = bucket.min === null ? point.v : Math.min(bucket.min, point.v);
+            bucket.max = bucket.max === null ? point.v : Math.max(bucket.max, point.v);
+            bucket.lastV = point.v;
+        }
+
+        return buckets.map((bucket) => {
+            if (bucket.count <= 0) {
+                return { t: bucket.t, v: null };
+            }
+            let value = bucket.sum / bucket.count;
+            if (mode === 'max') {
+                value = bucket.max;
+            }
+            else if (mode === 'min') {
+                value = bucket.min;
+            }
+            else if (mode === 'last') {
+                value = bucket.lastV;
+            }
+            return { t: bucket.t, v: Number.isFinite(value) ? Number(value) : null };
+        });
+    };
+
     const calculatePercentile = (values, percentile) => {
         const nums = (Array.isArray(values) ? values : [])
             .map((value) => Number(value))
@@ -414,6 +575,7 @@ window.ReactDashboardTimeSeriesWidget = (() => {
             });
             return map;
         }, [seriesConfig]);
+        const thresholdRows = useMemo(() => parseThresholds(cfg.thresholdsJson), [cfg.thresholdsJson]);
         const selectedHostIds = useMemo(() => parseIdsCsv(cfg.hostidsCsv), [cfg.hostidsCsv]);
 
         const persistSeriesConfig = (nextRows) => {
@@ -453,6 +615,35 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                 delete copy[rowId];
                 return copy;
             });
+        };
+
+        const updateThresholdRows = (nextRows) => {
+            updateSettings({ thresholdsJson: serializeThresholds(nextRows) });
+        };
+
+        const addThresholdRow = () => {
+            const nextValue = thresholdRows.length > 0
+                ? Number(thresholdRows[thresholdRows.length - 1].value) + 1
+                : 80;
+            updateThresholdRows([
+                ...thresholdRows,
+                {
+                    id: `thr_${Date.now()}`,
+                    value: nextValue,
+                    color: '#E24D42',
+                    fill: 12,
+                    label: `T${thresholdRows.length + 1}`
+                }
+            ]);
+        };
+
+        const patchThresholdRow = (id, patch) => {
+            const next = thresholdRows.map((row) => (row.id === id ? { ...row, ...patch } : row));
+            updateThresholdRows(next);
+        };
+
+        const removeThresholdRow = (id) => {
+            updateThresholdRows(thresholdRows.filter((row) => row.id !== id));
         };
 
         const isSeriesSectionClosed = useCallback((rowId, sectionKey) => {
@@ -693,13 +884,62 @@ window.ReactDashboardTimeSeriesWidget = (() => {
             }
         }, [dataTimeFrom, safeDataTimeTo, hasZoom, zoomRange]);
 
-        const hasRightAxis = useMemo(() => preparedSeries.some((serie) => serie.axis === 'right'), [preparedSeries]);
-        const hasLeftAxis = useMemo(() => preparedSeries.some((serie) => serie.axis !== 'right'), [preparedSeries]);
+        const stackMode = ['off', 'normal', 'percent'].includes(cfg.stackMode) ? cfg.stackMode : 'off';
+        const stackBucketCount = Math.max(24, Math.floor(Math.max(120, bodySize.width - 80) / 4));
+
+        const stackedAxisValues = useMemo(() => {
+            if (stackMode === 'off') {
+                return { left: null, right: null };
+            }
+
+            const buildAxisValues = (axisKey) => {
+                const axisSeries = preparedSeries.filter((serie) => (axisKey === 'right' ? serie.axis === 'right' : serie.axis !== 'right'));
+                if (axisSeries.length === 0) {
+                    return [];
+                }
+
+                const alignedSeries = axisSeries.map((serie) => aggregatePointsAlignedByTimeBuckets(
+                    serie.points.filter((point) => point.t >= viewTimeFrom && point.t <= safeViewTimeTo),
+                    viewTimeFrom,
+                    safeViewTimeTo,
+                    stackBucketCount,
+                    'avg'
+                ));
+
+                if (alignedSeries.length === 0 || alignedSeries[0].length === 0) {
+                    return [];
+                }
+
+                if (stackMode === 'percent') {
+                    return alignedSeries[0].map((_, idx) => {
+                        const total = alignedSeries.reduce((sum, seriesPoints) => {
+                            const value = Number(seriesPoints[idx] && seriesPoints[idx].v);
+                            return sum + (Number.isFinite(value) ? Math.max(0, value) : 0);
+                        }, 0);
+                        return total > 0 ? 100 : 0;
+                    });
+                }
+
+                return alignedSeries[0].map((_, idx) => alignedSeries.reduce((sum, seriesPoints) => {
+                    const value = Number(seriesPoints[idx] && seriesPoints[idx].v);
+                    return sum + (Number.isFinite(value) ? value : 0);
+                }, 0));
+            };
+
+            return {
+                left: buildAxisValues('left'),
+                right: buildAxisValues('right')
+            };
+        }, [preparedSeries, safeViewTimeTo, stackBucketCount, stackMode, viewTimeFrom]);
 
         const leftVisibleValues = useMemo(() => {
+            if (stackMode !== 'off' && Array.isArray(stackedAxisValues.left) && stackedAxisValues.left.length > 0) {
+                return stackedAxisValues.left;
+            }
+
             const values = [];
             preparedSeries.forEach((serie) => {
-                if (hasRightAxis && serie.axis === 'right') {
+                if (serie.axis === 'right') {
                     return;
                 }
                 serie.points.forEach((point) => {
@@ -712,15 +952,21 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                 return values;
             }
             const fallback = preparedSeries
-                .filter((serie) => !hasRightAxis || serie.axis !== 'right')
+                .filter((serie) => serie.axis !== 'right')
                 .flatMap((serie) => serie.points.map((point) => point.v));
             return fallback.length > 0 ? fallback : preparedSeries.flatMap((serie) => serie.points.map((point) => point.v));
-        }, [preparedSeries, hasRightAxis, viewTimeFrom, safeViewTimeTo]);
+        }, [preparedSeries, safeViewTimeTo, stackedAxisValues.left, stackMode, viewTimeFrom]);
 
         const rightVisibleValues = useMemo(() => {
-            if (!hasRightAxis) {
+            const hasRight = preparedSeries.some((serie) => serie.axis === 'right');
+            if (!hasRight) {
                 return [];
             }
+
+            if (stackMode !== 'off' && Array.isArray(stackedAxisValues.right) && stackedAxisValues.right.length > 0) {
+                return stackedAxisValues.right;
+            }
+
             const values = [];
             preparedSeries.forEach((serie) => {
                 if (serie.axis !== 'right') {
@@ -738,7 +984,10 @@ window.ReactDashboardTimeSeriesWidget = (() => {
             return preparedSeries
                 .filter((serie) => serie.axis === 'right')
                 .flatMap((serie) => serie.points.map((point) => point.v));
-        }, [preparedSeries, hasRightAxis, viewTimeFrom, safeViewTimeTo]);
+        }, [preparedSeries, safeViewTimeTo, stackedAxisValues.right, stackMode, viewTimeFrom]);
+
+        const hasRightAxis = useMemo(() => preparedSeries.some((serie) => serie.axis === 'right'), [preparedSeries]);
+        const hasLeftAxis = useMemo(() => preparedSeries.some((serie) => serie.axis !== 'right'), [preparedSeries]);
 
         const valueMin = leftVisibleValues.length > 0 ? Math.min(...leftVisibleValues) : 0;
         const valueMax = leftVisibleValues.length > 0 ? Math.max(...leftVisibleValues) : 1;
@@ -781,42 +1030,167 @@ window.ReactDashboardTimeSeriesWidget = (() => {
         const maxPointMarkers = Math.max(90, Math.floor(plotWidth * 0.6));
         const targetBarBuckets = Math.max(32, Math.floor(plotWidth / 4.5));
 
-        const seriesRenderState = useMemo(() => preparedSeries
-            .map((serie) => {
-                const visiblePoints = serie.points.filter((point) => point.t >= viewTimeFrom && point.t <= safeViewTimeTo);
-                if (visiblePoints.length === 0) {
-                    return null;
+        const seriesRenderState = useMemo(() => {
+            const interpolation = ['linear', 'smooth', 'step'].includes(cfg.lineInterpolation) ? cfg.lineInterpolation : 'linear';
+            const base = preparedSeries
+                .map((serie) => {
+                    const visiblePoints = serie.points.filter((point) => point.t >= viewTimeFrom && point.t <= safeViewTimeTo);
+                    if (visiblePoints.length === 0) {
+                        return null;
+                    }
+
+                    const drawStyle = ['line', 'points', 'bars'].includes(serie.draw_style) ? serie.draw_style : 'line';
+                    const lineWidth = clampInt(serie.line_width, 2, 1, 8);
+                    const fillOpacity = clampInt(serie.fill_opacity, 0, 0, 100) / 100;
+                    const sampledForLine = downsampleMinMaxByBuckets(visiblePoints, maxLineVertices);
+                    const sampledForBars = aggregatePointsByTimeBuckets(visiblePoints, viewTimeFrom, safeViewTimeTo, targetBarBuckets, 'avg');
+                    const renderPoints = drawStyle === 'bars' ? sampledForBars : sampledForLine;
+                    const markerPoints = downsampleMinMaxByBuckets(renderPoints, maxPointMarkers);
+
+                    return {
+                        id: serie.id,
+                        color: serie.color,
+                        axis: serie.axis === 'right' ? 'right' : 'left',
+                        showInLegend: Number(serie.show_in_legend) === 0 ? false : true,
+                        drawStyle,
+                        lineWidth,
+                        fillOpacity,
+                        lineInterpolation: interpolation,
+                        renderPoints,
+                        markerPoints,
+                        visiblePoints
+                    };
+                })
+                .filter(Boolean);
+
+            if (stackMode === 'off') {
+                return base;
+            }
+
+            const stackable = base.filter((serie) => serie.drawStyle !== 'points');
+            if (stackable.length === 0) {
+                return base;
+            }
+
+            const stackedById = new Map();
+            ['left', 'right'].forEach((axisKey) => {
+                const axisSeries = stackable.filter((serie) => (axisKey === 'right' ? serie.axis === 'right' : serie.axis !== 'right'));
+                if (axisSeries.length === 0) {
+                    return;
                 }
 
-                const drawStyle = ['line', 'points', 'bars'].includes(serie.draw_style) ? serie.draw_style : 'line';
-                const lineWidth = clampInt(serie.line_width, 2, 1, 8);
-                const fillOpacity = clampInt(serie.fill_opacity, 0, 0, 100) / 100;
+                const aligned = axisSeries.map((serie) => aggregatePointsAlignedByTimeBuckets(
+                    serie.visiblePoints,
+                    viewTimeFrom,
+                    safeViewTimeTo,
+                    stackBucketCount,
+                    'avg'
+                ));
 
-                const sampledForLine = downsampleMinMaxByBuckets(visiblePoints, maxLineVertices);
-                const sampledForBars = aggregatePointsByTimeBuckets(visiblePoints, viewTimeFrom, safeViewTimeTo, targetBarBuckets, 'avg');
-                const renderPoints = drawStyle === 'bars' ? sampledForBars : sampledForLine;
-                const markerPoints = downsampleMinMaxByBuckets(renderPoints, maxPointMarkers);
+                if (aligned.length === 0 || aligned[0].length === 0) {
+                    return;
+                }
 
-                return {
-                    id: serie.id,
-                    color: serie.color,
-                    axis: serie.axis === 'right' ? 'right' : 'left',
-                    showInLegend: Number(serie.show_in_legend) === 0 ? false : true,
-                    drawStyle,
-                    lineWidth,
-                    fillOpacity,
-                    renderPoints,
-                    markerPoints
-                };
-            })
-            .filter(Boolean), [
-            preparedSeries,
-            viewTimeFrom,
-            safeViewTimeTo,
+                const bucketCount = aligned[0].length;
+                const totals = stackMode === 'percent'
+                    ? Array.from({ length: bucketCount }, (_, bucketIdx) => aligned.reduce((sum, seriesPoints) => {
+                        const value = Number(seriesPoints[bucketIdx] && seriesPoints[bucketIdx].v);
+                        return sum + (Number.isFinite(value) ? Math.max(0, value) : 0);
+                    }, 0))
+                    : null;
+                const cumulative = new Array(bucketCount).fill(0);
+
+                axisSeries.forEach((serie, seriesIdx) => {
+                    const points = [];
+                    for (let bucketIdx = 0; bucketIdx < bucketCount; bucketIdx += 1) {
+                        const point = aligned[seriesIdx][bucketIdx];
+                        const raw = Number(point && point.v);
+                        if (!Number.isFinite(raw)) {
+                            continue;
+                        }
+
+                        let value = raw;
+                        if (stackMode === 'percent') {
+                            const total = Number(totals[bucketIdx]);
+                            if (!Number.isFinite(total) || total <= 0) {
+                                continue;
+                            }
+                            value = (Math.max(0, raw) / total) * 100;
+                        }
+
+                        const baseValue = cumulative[bucketIdx];
+                        const topValue = baseValue + value;
+                        cumulative[bucketIdx] = topValue;
+                        points.push({
+                            t: point.t,
+                            v: topValue,
+                            baseV: baseValue
+                        });
+                    }
+
+                    stackedById.set(serie.id, {
+                        ...serie,
+                        isStacked: true,
+                        renderPoints: points,
+                        markerPoints: downsampleMinMaxByBuckets(points, maxPointMarkers)
+                    });
+                });
+            });
+
+            return base.map((serie) => stackedById.get(serie.id) || serie);
+        }, [
+            cfg.lineInterpolation,
             maxLineVertices,
             maxPointMarkers,
-            targetBarBuckets
+            preparedSeries,
+            safeViewTimeTo,
+            stackBucketCount,
+            stackMode,
+            targetBarBuckets,
+            viewTimeFrom
         ]);
+
+        const thresholdRenderState = useMemo(() => {
+            const rows = thresholdRows
+                .filter((row) => Number.isFinite(Number(row.value)))
+                .map((row) => ({
+                    ...row,
+                    value: Number(row.value),
+                    fill: clampInt(row.fill, 12, 0, 100)
+                }))
+                .sort((a, b) => a.value - b.value);
+
+            const lines = rows
+                .filter((row) => row.value >= yMin && row.value <= safeYMax)
+                .map((row) => ({
+                    ...row,
+                    y: scaleY(row.value)
+                }));
+
+            const bands = rows
+                .map((row, idx) => {
+                    const next = rows[idx + 1];
+                    const fromValue = row.value;
+                    const toValue = next ? next.value : safeYMax;
+                    const minValue = Math.max(yMin, Math.min(fromValue, toValue));
+                    const maxValue = Math.min(safeYMax, Math.max(fromValue, toValue));
+                    if (maxValue <= minValue || row.fill <= 0) {
+                        return null;
+                    }
+                    const topY = scaleY(maxValue);
+                    const bottomY = scaleY(minValue);
+                    return {
+                        id: `${row.id}-band-${idx}`,
+                        color: row.color,
+                        opacity: row.fill / 100,
+                        y: topY,
+                        h: Math.max(0, bottomY - topY)
+                    };
+                })
+                .filter(Boolean);
+
+            return { lines, bands };
+        }, [thresholdRows, yMin, safeYMax, scaleY]);
 
         const legendRows = useMemo(() => preparedSeries.map((serie) => {
             const values = serie.points
@@ -1146,6 +1520,50 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                             </g>
                         )}
 
+                        {thresholdRenderState.bands.length > 0 && (
+                            <g className="ts-threshold-bands">
+                                {thresholdRenderState.bands.map((band) => (
+                                    <rect
+                                        key={band.id}
+                                        x={chartPadding.left}
+                                        y={band.y}
+                                        width={plotWidth}
+                                        height={band.h}
+                                        fill={band.color}
+                                        opacity={band.opacity}
+                                    />
+                                ))}
+                            </g>
+                        )}
+
+                        {thresholdRenderState.lines.length > 0 && (
+                            <g className="ts-threshold-lines">
+                                {thresholdRenderState.lines.map((line) => (
+                                    <g key={`${line.id}-line`}>
+                                        <line
+                                            x1={chartPadding.left}
+                                            y1={line.y}
+                                            x2={chartPadding.left + plotWidth}
+                                            y2={line.y}
+                                            stroke={line.color}
+                                            strokeWidth="1.1"
+                                            strokeDasharray="4 3"
+                                            opacity="0.95"
+                                        />
+                                        <text
+                                            x={chartPadding.left + plotWidth - 4}
+                                            y={Math.max(chartPadding.top + 10, line.y - 5)}
+                                            textAnchor="end"
+                                            fill={line.color}
+                                            style={{ fontSize: '10px' }}
+                                        >
+                                            {`${line.label}: ${formatLegendNumber(line.value)}`}
+                                        </text>
+                                    </g>
+                                ))}
+                            </g>
+                        )}
+
                         <g className="ts-axis-labels">
                             {hasLeftAxis && Array.from({ length: yTicks + 1 }).map((_, idx) => {
                                 const y = chartPadding.top + ((plotHeight / yTicks) * idx);
@@ -1192,6 +1610,8 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                 const useRightAxis = serie.axis === 'right';
                                 const yScale = useRightAxis ? scaleYRight : scaleY;
                                 const axisMin = useRightAxis ? rightYMin : yMin;
+                                const interpolation = ['linear', 'smooth', 'step'].includes(serie.lineInterpolation) ? serie.lineInterpolation : 'linear';
+                                const isStacked = serie.isStacked === true;
 
                                 if (drawStyle === 'bars') {
                                     const minSpacing = points.length > 1
@@ -1204,12 +1624,15 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                         }, Infinity)
                                         : 6;
                                     const barWidth = Math.max(2, Math.min(14, (Number.isFinite(minSpacing) ? minSpacing : 6) * 0.68));
-                                    const baseY = yScale(Math.max(0, axisMin));
                                     return (
                                         <g key={key}>
                                             {points.map((point, idx) => {
                                                 const x = scaleX(point.t);
                                                 const y = yScale(point.v);
+                                                const barBaseValue = Number.isFinite(point.baseV)
+                                                    ? point.baseV
+                                                    : Math.max(0, axisMin);
+                                                const baseY = yScale(barBaseValue);
                                                 const rectY = Math.min(y, baseY);
                                                 const h = Math.abs(baseY - y);
                                                 return (
@@ -1228,8 +1651,12 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                     );
                                 }
 
-                                const linePath = buildLinePath(points, scaleX, yScale);
-                                const areaPath = fillOpacity > 0 ? buildAreaPath(points, scaleX, yScale, chartPadding.top + plotHeight) : '';
+                                const linePath = buildLinePath(points, scaleX, yScale, interpolation);
+                                const areaPath = fillOpacity > 0
+                                    ? (isStacked
+                                        ? buildStackAreaPath(points, scaleX, yScale)
+                                        : buildAreaPath(points, scaleX, yScale, chartPadding.top + plotHeight, interpolation))
+                                    : '';
 
                                 return (
                                     <g key={key}>
@@ -1254,7 +1681,7 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                         </g>
 
                         {percentileLines.map((line, idx) => {
-                            const useRightAxis = hasRightAxis && line.axis === 'right';
+                            const useRightAxis = line.axis === 'right';
                             const axisMin = useRightAxis ? rightYMin : yMin;
                             const axisMax = useRightAxis ? rightSafeYMax : safeYMax;
                             if (!Number.isFinite(line.value) || line.value < axisMin || line.value > axisMax) {
@@ -1667,6 +2094,24 @@ window.ReactDashboardTimeSeriesWidget = (() => {
 
                             {renderEditorSection('display', 'Display global', (
                                 <>
+                                    <div className="editor-label">Stack mode</div>
+                                    <div className="editor-control">
+                                        <select value={cfg.stackMode || 'off'} onChange={(e) => updateSettings({ stackMode: e.target.value })}>
+                                            <option value="off">Off</option>
+                                            <option value="normal">Normal</option>
+                                            <option value="percent">Percent</option>
+                                        </select>
+                                    </div>
+
+                                    <div className="editor-label">Line interpolation</div>
+                                    <div className="editor-control">
+                                        <select value={cfg.lineInterpolation || 'linear'} onChange={(e) => updateSettings({ lineInterpolation: e.target.value })}>
+                                            <option value="linear">Linear</option>
+                                            <option value="smooth">Smooth</option>
+                                            <option value="step">Step</option>
+                                        </select>
+                                    </div>
+
                                     <div className="editor-label">Show grid</div>
                                     <div className="editor-control"><label><input type="checkbox" checked={cfg.showGrid} onChange={(e) => updateSettings({ showGrid: e.target.checked })} /> Grid lines</label></div>
                                 </>
@@ -1715,6 +2160,64 @@ window.ReactDashboardTimeSeriesWidget = (() => {
 
                                     <div className="editor-label">Y max (global)</div>
                                     <div className="editor-control"><input type="text" value={cfg.yMax} placeholder="auto" onChange={(e) => updateSettings({ yMax: e.target.value })} /></div>
+
+                                    <div className="editor-label">Thresholds</div>
+                                    <div className="editor-control">
+                                        <div className="editor-picker-panel">
+                                            {thresholdRows.length === 0 && (
+                                                <div className="editor-subtle">No thresholds configured.</div>
+                                            )}
+                                            {thresholdRows.map((row) => (
+                                                <div className="editor-mapping-row" key={row.id}>
+                                                    <input
+                                                        type="number"
+                                                        value={Number(row.value)}
+                                                        onChange={(e) => {
+                                                            const parsed = Number(String(e.target.value || '').replace(/,/g, '.'));
+                                                            if (Number.isFinite(parsed)) {
+                                                                patchThresholdRow(row.id, { value: parsed });
+                                                            }
+                                                        }}
+                                                        placeholder="Value"
+                                                    />
+                                                    <input
+                                                        type="text"
+                                                        value={row.label}
+                                                        onChange={(e) => patchThresholdRow(row.id, { label: e.target.value })}
+                                                        placeholder="Label"
+                                                    />
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        max="100"
+                                                        value={Number(row.fill)}
+                                                        onChange={(e) => {
+                                                            const parsed = Number(String(e.target.value || '').replace(/,/g, '.'));
+                                                            const nextFill = Number.isFinite(parsed) ? clampInt(parsed, 12, 0, 100) : 12;
+                                                            patchThresholdRow(row.id, { fill: nextFill });
+                                                        }}
+                                                        placeholder="Fill %"
+                                                    />
+                                                    {ColorPickerField ? (
+                                                        <ColorPickerField
+                                                            value={row.color}
+                                                            defaultColor="#E24D42"
+                                                            onChange={(nextColor) => patchThresholdRow(row.id, { color: nextColor })}
+                                                        />
+                                                    ) : (
+                                                        <input
+                                                            type="text"
+                                                            value={row.color}
+                                                            onChange={(e) => patchThresholdRow(row.id, { color: e.target.value })}
+                                                            placeholder="#E24D42"
+                                                        />
+                                                    )}
+                                                    <button className="btn-zbx btn-danger" type="button" onClick={() => removeThresholdRow(row.id)}>✕</button>
+                                                </div>
+                                            ))}
+                                            <button className="btn-zbx" type="button" onClick={addThresholdRow} disabled={thresholdRows.length >= 12}>Add threshold</button>
+                                        </div>
+                                    </div>
                                 </>
                             ))}
 
