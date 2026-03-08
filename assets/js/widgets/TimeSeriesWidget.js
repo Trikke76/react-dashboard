@@ -23,6 +23,7 @@ window.ReactDashboardTimeSeriesWidget = (() => {
         '#5794F2', '#73BF69', '#FADE2A', '#FF9830', '#E24D42', '#B877D9',
         '#56D2C6', '#F2495C', '#8AB8FF', '#7EE787', '#F6C25B', '#A3AED0'
     ];
+    const DEFAULT_SCHEME = 'green-yellow-red';
 
     const clampInt = (value, fallback, min, max) => {
         const num = Number(value);
@@ -126,6 +127,10 @@ window.ReactDashboardTimeSeriesWidget = (() => {
         const lineWidth = Number.isFinite(lineWidthRaw) && lineWidthRaw > 0
             ? clampInt(lineWidthRaw, 2, 1, 8)
             : 2;
+        const lineStyle = ['solid', 'dash', 'dot'].includes(source.lineStyle) ? source.lineStyle : 'solid';
+        const gradientMode = ['none', 'opacity', 'scheme'].includes(source.gradientMode) ? source.gradientMode : 'none';
+        const schemeGradientMode = ['green-yellow-red', 'blue-purple', 'spectral'].includes(source.schemeGradientMode) ? source.schemeGradientMode : DEFAULT_SCHEME;
+        const lineColorMode = ['fixed', 'scale', 'thresholds'].includes(source.lineColorMode) ? source.lineColorMode : 'fixed';
 
         return {
             id: safeSeriesId(source.id, idx),
@@ -143,6 +148,11 @@ window.ReactDashboardTimeSeriesWidget = (() => {
             drawStyle,
             lineWidth,
             fillOpacity: clampInt(source.fillOpacity, 0, 0, 100),
+            lineStyle,
+            gradientMode,
+            schemeGradientMode,
+            lineColorMode,
+            colorThresholds: toText(source.colorThresholds, '', 255),
             showPercentileLine: toBoolean(source.showPercentileLine, false),
             percentileValue: clampInt(source.percentileValue, 95, 0, 100)
         };
@@ -217,6 +227,167 @@ window.ReactDashboardTimeSeriesWidget = (() => {
         }
         const parsed = Number(raw);
         return Number.isFinite(parsed) ? parsed : null;
+    };
+
+    const COLOR_SCHEMES = {
+        'green-yellow-red': ['#2E7D32', '#FBC02D', '#C62828'],
+        'blue-purple': ['#1E88E5', '#42A5F5', '#7E57C2'],
+        spectral: ['#2C7BB6', '#00A6CA', '#00CCBC', '#90EB9D', '#FFFF8C', '#F9D057', '#F29E2E', '#D7191C']
+    };
+
+    const parseSeriesColorThresholds = (raw) => {
+        const text = String(raw || '').trim();
+        if (text === '') {
+            return [];
+        }
+
+        return text
+            .split(/[\n,;]+/)
+            .map((token) => token.trim())
+            .map((token) => {
+                const match = token.match(/^(-?\d+(?:[.,]\d+)?)\s*[:=]\s*(#[0-9A-Fa-f]{6})$/);
+                if (!match) {
+                    return null;
+                }
+                const value = Number(String(match[1]).replace(/,/g, '.'));
+                if (!Number.isFinite(value)) {
+                    return null;
+                }
+                return {
+                    value,
+                    color: String(match[2]).toUpperCase()
+                };
+            })
+            .filter(Boolean)
+            .sort((a, b) => a.value - b.value)
+            .slice(0, 16);
+    };
+
+    const hexToRgb = (hex) => {
+        const raw = String(hex || '').replace('#', '').trim();
+        if (!/^[0-9a-fA-F]{6}$/.test(raw)) {
+            return null;
+        }
+        return {
+            r: Number.parseInt(raw.slice(0, 2), 16),
+            g: Number.parseInt(raw.slice(2, 4), 16),
+            b: Number.parseInt(raw.slice(4, 6), 16)
+        };
+    };
+
+    const rgbToHex = (rgb, fallback = '#5794F2') => {
+        if (!rgb || !Number.isFinite(rgb.r) || !Number.isFinite(rgb.g) || !Number.isFinite(rgb.b)) {
+            return fallback;
+        }
+        const toHexChannel = (value) => Math.max(0, Math.min(255, Math.round(value))).toString(16).padStart(2, '0').toUpperCase();
+        return `#${toHexChannel(rgb.r)}${toHexChannel(rgb.g)}${toHexChannel(rgb.b)}`;
+    };
+
+    const blendHexColors = (aHex, bHex, ratio) => {
+        const a = hexToRgb(aHex);
+        const b = hexToRgb(bHex);
+        if (!a || !b) {
+            return toHex(aHex, '#5794F2');
+        }
+        const t = clampNumber(Number(ratio) || 0, 0, 1);
+        return rgbToHex({
+            r: a.r + ((b.r - a.r) * t),
+            g: a.g + ((b.g - a.g) * t),
+            b: a.b + ((b.b - a.b) * t)
+        }, '#5794F2');
+    };
+
+    const resolveSchemeStops = (schemeGradientMode) => (
+        COLOR_SCHEMES[schemeGradientMode] || COLOR_SCHEMES[DEFAULT_SCHEME]
+    );
+
+    const resolveScaleColor = (value, min, max, schemeGradientMode, fallback) => {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) {
+            return fallback;
+        }
+        const stops = resolveSchemeStops(schemeGradientMode);
+        if (!Array.isArray(stops) || stops.length === 0) {
+            return fallback;
+        }
+        if (stops.length === 1) {
+            return stops[0];
+        }
+
+        const safeMin = Number.isFinite(min) ? min : numeric;
+        const safeMax = Number.isFinite(max) ? max : numeric;
+        const span = safeMax - safeMin;
+        const ratio = span === 0
+            ? 0.5
+            : clampNumber((numeric - safeMin) / span, 0, 1);
+
+        const segmentCount = stops.length - 1;
+        const scaled = ratio * segmentCount;
+        const idx = Math.min(segmentCount - 1, Math.floor(scaled));
+        const local = scaled - idx;
+        return blendHexColors(stops[idx], stops[idx + 1], local);
+    };
+
+    const resolveThresholdColor = (value, rows, fallback) => {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric) || !Array.isArray(rows) || rows.length === 0) {
+            return fallback;
+        }
+        let color = fallback;
+        for (let idx = 0; idx < rows.length; idx += 1) {
+            const row = rows[idx];
+            if (numeric >= row.value) {
+                color = row.color;
+            }
+            else {
+                break;
+            }
+        }
+        return color;
+    };
+
+    const resolveLineDashArray = (lineStyle) => {
+        if (lineStyle === 'dash') {
+            return '8 5';
+        }
+        if (lineStyle === 'dot') {
+            return '2 4';
+        }
+        return '';
+    };
+
+    const safeSvgId = (raw, fallback = 'ts') => {
+        const token = String(raw || '').replace(/[^A-Za-z0-9_-]/g, '_');
+        return token || fallback;
+    };
+
+    const buildLineColorStops = (points, scaleX, left, width, resolveColor) => {
+        if (!Array.isArray(points) || points.length === 0 || typeof resolveColor !== 'function') {
+            return [];
+        }
+        const sampleLimit = Math.max(8, Math.min(96, points.length));
+        const sampled = downsampleMinMaxByBuckets(points, sampleLimit);
+        const safeWidth = Math.max(1, Number(width) || 1);
+        const stops = [];
+        sampled.forEach((point) => {
+            const offset = clampNumber((scaleX(point.t) - left) / safeWidth, 0, 1);
+            const color = resolveColor(point.v);
+            const prev = stops.length > 0 ? stops[stops.length - 1] : null;
+            if (!prev || Math.abs(prev.offset - offset) > 0.004 || prev.color !== color) {
+                stops.push({ offset, color });
+            }
+        });
+        if (stops.length === 0) {
+            return [];
+        }
+        if (stops[0].offset > 0) {
+            stops.unshift({ offset: 0, color: stops[0].color });
+        }
+        const last = stops[stops.length - 1];
+        if (last.offset < 1) {
+            stops.push({ offset: 1, color: last.color });
+        }
+        return stops;
     };
 
     const buildLinePath = (points, scaleX, scaleY, interpolation = 'linear') => {
@@ -696,7 +867,12 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                         showInLegend: row.showInLegend !== false ? 1 : 0,
                         drawStyle: row.drawStyle || 'line',
                         lineWidth: clampInt(row.lineWidth, 2, 1, 8),
-                        fillOpacity: clampInt(row.fillOpacity, 0, 0, 100)
+                        fillOpacity: clampInt(row.fillOpacity, 0, 0, 100),
+                        lineStyle: row.lineStyle || 'solid',
+                        gradientMode: row.gradientMode || 'none',
+                        schemeGradientMode: row.schemeGradientMode || DEFAULT_SCHEME,
+                        lineColorMode: row.lineColorMode || 'fixed',
+                        colorThresholds: row.colorThresholds || ''
                     })))
                 }, 5000);
 
@@ -848,15 +1024,31 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                 .filter((point) => Number.isFinite(point.t) && Number.isFinite(point.v))
                 .sort((a, b) => a.t - b.t);
 
+            const seriesId = String(serie.series_id || serie.itemid || `s_${idx + 1}`);
+            const row = seriesConfigById.get(seriesId);
+            const normalized = normalizeSeriesRow(row || {}, idx);
+
             return {
                 ...serie,
-                id: String(serie.series_id || serie.itemid || `s_${idx + 1}`),
-                color: String(serie.color || '#5794F2'),
-                axis: String(serie.axis || '').toLowerCase() === 'right' ? 'right' : 'left',
-                show_in_legend: Number(serie.show_in_legend) === 0 ? 0 : 1,
+                id: seriesId,
+                color: row ? normalized.color : String(serie.color || '#5794F2'),
+                axis: row
+                    ? normalized.axis
+                    : (String(serie.axis || '').toLowerCase() === 'right' ? 'right' : 'left'),
+                show_in_legend: row
+                    ? (normalized.showInLegend !== false ? 1 : 0)
+                    : (Number(serie.show_in_legend) === 0 ? 0 : 1),
+                draw_style: row ? normalized.drawStyle : String(serie.draw_style || 'line'),
+                line_width: row ? normalized.lineWidth : Number(serie.line_width || 2),
+                fill_opacity: row ? normalized.fillOpacity : Number(serie.fill_opacity || 0),
+                line_style: row ? normalized.lineStyle : 'solid',
+                gradient_mode: row ? normalized.gradientMode : 'none',
+                scheme_gradient_mode: row ? normalized.schemeGradientMode : DEFAULT_SCHEME,
+                line_color_mode: row ? normalized.lineColorMode : 'fixed',
+                color_thresholds: row ? normalized.colorThresholds : '',
                 points
             };
-        }).filter((serie) => serie.points.length > 0), [chartSeries]);
+        }).filter((serie) => serie.points.length > 0), [chartSeries, seriesConfigById]);
 
         const dataTimeFrom = Number(model.time_from) || Math.floor(Date.now() / 1000) - (cfg.lookbackHours * 3600);
         const dataTimeTo = Number(model.time_to) || Math.floor(Date.now() / 1000);
@@ -1042,6 +1234,15 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                     const drawStyle = ['line', 'points', 'bars'].includes(serie.draw_style) ? serie.draw_style : 'line';
                     const lineWidth = clampInt(serie.line_width, 2, 1, 8);
                     const fillOpacity = clampInt(serie.fill_opacity, 0, 0, 100) / 100;
+                    const lineStyle = ['solid', 'dash', 'dot'].includes(serie.line_style) ? serie.line_style : 'solid';
+                    const gradientMode = ['none', 'opacity', 'scheme'].includes(serie.gradient_mode) ? serie.gradient_mode : 'none';
+                    const schemeGradientMode = ['green-yellow-red', 'blue-purple', 'spectral'].includes(serie.scheme_gradient_mode)
+                        ? serie.scheme_gradient_mode
+                        : DEFAULT_SCHEME;
+                    const lineColorMode = ['fixed', 'scale', 'thresholds'].includes(serie.line_color_mode)
+                        ? serie.line_color_mode
+                        : 'fixed';
+                    const colorThresholdRows = parseSeriesColorThresholds(serie.color_thresholds);
                     const sampledForLine = downsampleMinMaxByBuckets(visiblePoints, maxLineVertices);
                     const sampledForBars = aggregatePointsByTimeBuckets(visiblePoints, viewTimeFrom, safeViewTimeTo, targetBarBuckets, 'avg');
                     const renderPoints = drawStyle === 'bars' ? sampledForBars : sampledForLine;
@@ -1055,6 +1256,11 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                         drawStyle,
                         lineWidth,
                         fillOpacity,
+                        lineStyle,
+                        gradientMode,
+                        schemeGradientMode,
+                        lineColorMode,
+                        colorThresholdRows,
                         lineInterpolation: interpolation,
                         renderPoints,
                         markerPoints,
@@ -1596,7 +1802,7 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                         </g>
 
                         <g className="ts-series-layer">
-                            {seriesRenderState.map((serie) => {
+                            {seriesRenderState.map((serie, seriesIdx) => {
                                 const points = serie.renderPoints;
                                 if (points.length === 0) {
                                     return null;
@@ -1610,8 +1816,35 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                 const useRightAxis = serie.axis === 'right';
                                 const yScale = useRightAxis ? scaleYRight : scaleY;
                                 const axisMin = useRightAxis ? rightYMin : yMin;
+                                const axisMax = useRightAxis ? rightSafeYMax : safeYMax;
                                 const interpolation = ['linear', 'smooth', 'step'].includes(serie.lineInterpolation) ? serie.lineInterpolation : 'linear';
                                 const isStacked = serie.isStacked === true;
+                                const lineStyle = ['solid', 'dash', 'dot'].includes(serie.lineStyle) ? serie.lineStyle : 'solid';
+                                const lineDashArray = resolveLineDashArray(lineStyle);
+                                const gradientMode = ['none', 'opacity', 'scheme'].includes(serie.gradientMode) ? serie.gradientMode : 'none';
+                                const schemeGradientMode = ['green-yellow-red', 'blue-purple', 'spectral'].includes(serie.schemeGradientMode)
+                                    ? serie.schemeGradientMode
+                                    : DEFAULT_SCHEME;
+                                const lineColorMode = ['fixed', 'scale', 'thresholds'].includes(serie.lineColorMode)
+                                    ? serie.lineColorMode
+                                    : 'fixed';
+                                const thresholdRows = Array.isArray(serie.colorThresholdRows) ? serie.colorThresholdRows : [];
+                                const resolveSeriesColorForValue = (value) => {
+                                    if (lineColorMode === 'scale') {
+                                        return resolveScaleColor(value, axisMin, axisMax, schemeGradientMode, color);
+                                    }
+                                    if (lineColorMode === 'thresholds') {
+                                        return resolveThresholdColor(value, thresholdRows, color);
+                                    }
+                                    return color;
+                                };
+                                const lineGradientStops = lineColorMode === 'fixed'
+                                    ? []
+                                    : buildLineColorStops(points, scaleX, chartPadding.left, plotWidth, resolveSeriesColorForValue);
+                                const gradientToken = safeSvgId(`${key}-${seriesIdx}`);
+                                const lineGradientId = `ts-line-grad-${gradientToken}`;
+                                const hasLineGradient = lineGradientStops.length > 1;
+                                const lineStroke = hasLineGradient ? `url(#${lineGradientId})` : color;
 
                                 if (drawStyle === 'bars') {
                                     const minSpacing = points.length > 1
@@ -1629,6 +1862,7 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                             {points.map((point, idx) => {
                                                 const x = scaleX(point.t);
                                                 const y = yScale(point.v);
+                                                const pointColor = resolveSeriesColorForValue(point.v);
                                                 const barBaseValue = Number.isFinite(point.baseV)
                                                     ? point.baseV
                                                     : Math.max(0, axisMin);
@@ -1642,7 +1876,7 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                                         y={rectY}
                                                         width={barWidth}
                                                         height={Math.max(1, h)}
-                                                        fill={color}
+                                                        fill={pointColor}
                                                         opacity="0.82"
                                                     />
                                                 );
@@ -1657,11 +1891,73 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                         ? buildStackAreaPath(points, scaleX, yScale)
                                         : buildAreaPath(points, scaleX, yScale, chartPadding.top + plotHeight, interpolation))
                                     : '';
+                                const areaGradientId = `ts-area-grad-${gradientToken}`;
+                                const showArea = areaPath !== '' && fillOpacity > 0;
+                                let areaFill = color;
+                                let areaOpacity = fillOpacity;
+                                if (showArea && gradientMode === 'opacity') {
+                                    areaFill = `url(#${areaGradientId})`;
+                                    areaOpacity = 1;
+                                }
+                                else if (showArea && gradientMode === 'scheme') {
+                                    areaFill = `url(#${areaGradientId})`;
+                                    areaOpacity = fillOpacity;
+                                }
+                                const schemeStops = resolveSchemeStops(schemeGradientMode);
 
                                 return (
                                     <g key={key}>
-                                        {areaPath !== '' && <path d={areaPath} fill={color} opacity={fillOpacity.toFixed(2)} />}
-                                        {drawStyle !== 'points' && <path d={linePath} fill="none" stroke={color} strokeWidth={lineWidth} strokeLinejoin="round" strokeLinecap="round" />}
+                                        {(hasLineGradient || (showArea && gradientMode !== 'none')) && (
+                                            <defs>
+                                                {hasLineGradient && (
+                                                    <linearGradient
+                                                        id={lineGradientId}
+                                                        gradientUnits="userSpaceOnUse"
+                                                        x1={chartPadding.left}
+                                                        y1={0}
+                                                        x2={chartPadding.left + plotWidth}
+                                                        y2={0}
+                                                    >
+                                                        {lineGradientStops.map((stop, stopIdx) => (
+                                                            <stop
+                                                                key={`${lineGradientId}-stop-${stopIdx}`}
+                                                                offset={`${(stop.offset * 100).toFixed(2)}%`}
+                                                                stopColor={stop.color}
+                                                            />
+                                                        ))}
+                                                    </linearGradient>
+                                                )}
+                                                {showArea && gradientMode === 'opacity' && (
+                                                    <linearGradient id={areaGradientId} x1="0%" y1="0%" x2="0%" y2="100%">
+                                                        <stop offset="0%" stopColor={color} stopOpacity={Math.max(0.1, fillOpacity)} />
+                                                        <stop offset="100%" stopColor={color} stopOpacity="0" />
+                                                    </linearGradient>
+                                                )}
+                                                {showArea && gradientMode === 'scheme' && (
+                                                    <linearGradient id={areaGradientId} x1="0%" y1="0%" x2="0%" y2="100%">
+                                                        {schemeStops.map((stopColor, stopIdx) => (
+                                                            <stop
+                                                                key={`${areaGradientId}-stop-${stopIdx}`}
+                                                                offset={`${((stopIdx / Math.max(1, schemeStops.length - 1)) * 100).toFixed(2)}%`}
+                                                                stopColor={stopColor}
+                                                            />
+                                                        ))}
+                                                    </linearGradient>
+                                                )}
+                                            </defs>
+                                        )}
+                                        {areaPath !== '' && <path d={areaPath} fill={areaFill} opacity={areaOpacity.toFixed(2)} />}
+                                        {drawStyle !== 'points' && (
+                                            <path
+                                                d={linePath}
+                                                fill="none"
+                                                stroke={lineStroke}
+                                                strokeWidth={lineWidth}
+                                                strokeLinejoin="round"
+                                                strokeLinecap="round"
+                                                strokeDasharray={lineDashArray || undefined}
+                                            />
+                                        )}
                                         {drawStyle === 'points' && serie.markerPoints
                                             .map((point, idx) => (
                                                 <circle
@@ -1669,7 +1965,7 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                                     cx={scaleX(point.t)}
                                                     cy={yScale(point.v)}
                                                     r={drawStyle === 'points' ? Math.max(3, lineWidth * 0.9) : Math.max(2.2, lineWidth * 0.75)}
-                                                    fill={color}
+                                                    fill={resolveSeriesColorForValue(point.v)}
                                                     stroke="rgba(8, 12, 18, 0.9)"
                                                     strokeWidth="1.2"
                                                     opacity="0.96"
@@ -1986,6 +2282,61 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                                                     <input type="text" value={row.color} onChange={(e) => upsertSeriesRow(row.id, { color: e.target.value })} />
                                                                 )}
                                                             </div>
+
+                                                            <div className="editor-label">Line style</div>
+                                                            <div className="editor-control">
+                                                                <select value={row.lineStyle || 'solid'} onChange={(e) => upsertSeriesRow(row.id, { lineStyle: e.target.value })}>
+                                                                    <option value="solid">Solid</option>
+                                                                    <option value="dash">Dash</option>
+                                                                    <option value="dot">Dot</option>
+                                                                </select>
+                                                            </div>
+
+                                                            <div className="editor-label">Color line by</div>
+                                                            <div className="editor-control">
+                                                                <select value={row.lineColorMode || 'fixed'} onChange={(e) => upsertSeriesRow(row.id, { lineColorMode: e.target.value })}>
+                                                                    <option value="fixed">Fixed color</option>
+                                                                    <option value="scale">Color scale</option>
+                                                                    <option value="thresholds">Discrete thresholds</option>
+                                                                </select>
+                                                            </div>
+
+                                                            {row.lineColorMode === 'thresholds' && (
+                                                                <>
+                                                                    <div className="editor-label">Color thresholds</div>
+                                                                    <div className="editor-control">
+                                                                        <input
+                                                                            type="text"
+                                                                            value={row.colorThresholds || ''}
+                                                                            onChange={(e) => upsertSeriesRow(row.id, { colorThresholds: e.target.value })}
+                                                                            placeholder="0:#2E7D32,80:#FADE2A,95:#C62828"
+                                                                        />
+                                                                        <div className="editor-subtle">Format: value:color, comma separated.</div>
+                                                                    </div>
+                                                                </>
+                                                            )}
+
+                                                            <div className="editor-label">Gradient mode</div>
+                                                            <div className="editor-control">
+                                                                <select value={row.gradientMode || 'none'} onChange={(e) => upsertSeriesRow(row.id, { gradientMode: e.target.value })}>
+                                                                    <option value="none">None</option>
+                                                                    <option value="opacity">Opacity</option>
+                                                                    <option value="scheme">Scheme</option>
+                                                                </select>
+                                                            </div>
+
+                                                            {(row.gradientMode === 'scheme' || row.lineColorMode === 'scale') && (
+                                                                <>
+                                                                    <div className="editor-label">Scheme gradient mode</div>
+                                                                    <div className="editor-control">
+                                                                        <select value={row.schemeGradientMode || DEFAULT_SCHEME} onChange={(e) => upsertSeriesRow(row.id, { schemeGradientMode: e.target.value })}>
+                                                                            <option value="green-yellow-red">Green / Yellow / Red</option>
+                                                                            <option value="blue-purple">Blue / Purple</option>
+                                                                            <option value="spectral">Spectral</option>
+                                                                        </select>
+                                                                    </div>
+                                                                </>
+                                                            )}
 
                                                             <div className="editor-label">Percentile line</div>
                                                             <div className="editor-control">
