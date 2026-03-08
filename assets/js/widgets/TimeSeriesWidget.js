@@ -694,6 +694,7 @@ window.ReactDashboardTimeSeriesWidget = (() => {
         }, [dataTimeFrom, safeDataTimeTo, hasZoom, zoomRange]);
 
         const hasRightAxis = useMemo(() => preparedSeries.some((serie) => serie.axis === 'right'), [preparedSeries]);
+        const hasLeftAxis = useMemo(() => preparedSeries.some((serie) => serie.axis !== 'right'), [preparedSeries]);
 
         const leftVisibleValues = useMemo(() => {
             const values = [];
@@ -761,7 +762,12 @@ window.ReactDashboardTimeSeriesWidget = (() => {
         const rightSafeYMax = rightYMax <= rightYMin ? rightYMin + 1 : rightYMax;
 
         const legendHeight = cfg.legendMode === 'hidden' ? 0 : (cfg.legendMode === 'table' ? 110 : 46);
-        const chartPadding = { top: 12, right: hasRightAxis ? 56 : 12, bottom: 20 + legendHeight, left: 42 };
+        const chartPadding = {
+            top: 12,
+            right: hasRightAxis ? 66 : 12,
+            bottom: 20 + legendHeight,
+            left: hasLeftAxis ? 42 : 12
+        };
         const plotWidth = Math.max(120, bodySize.width - chartPadding.left - chartPadding.right);
         const plotHeight = Math.max(90, bodySize.height - chartPadding.top - chartPadding.bottom);
 
@@ -1141,7 +1147,7 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                         )}
 
                         <g className="ts-axis-labels">
-                            {Array.from({ length: yTicks + 1 }).map((_, idx) => {
+                            {hasLeftAxis && Array.from({ length: yTicks + 1 }).map((_, idx) => {
                                 const y = chartPadding.top + ((plotHeight / yTicks) * idx);
                                 const value = safeYMax - (((safeYMax - yMin) / yTicks) * idx);
                                 return (
@@ -1154,7 +1160,7 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                 const y = chartPadding.top + ((plotHeight / yTicks) * idx);
                                 const value = rightSafeYMax - (((rightSafeYMax - rightYMin) / yTicks) * idx);
                                 return (
-                                    <text key={`yr-${idx}`} x={chartPadding.left + plotWidth + 8} y={y + 4} textAnchor="start">
+                                    <text key={`yr-${idx}`} x={Math.max(chartPadding.left + plotWidth + 8, bodySize.width - 4)} y={y + 4} textAnchor="end">
                                         {formatLegendNumber(value)}
                                     </text>
                                 );
@@ -1183,7 +1189,7 @@ window.ReactDashboardTimeSeriesWidget = (() => {
                                 const fillOpacity = serie.fillOpacity;
                                 const color = serie.color;
                                 const key = serie.id;
-                                const useRightAxis = hasRightAxis && serie.axis === 'right';
+                                const useRightAxis = serie.axis === 'right';
                                 const yScale = useRightAxis ? scaleYRight : scaleY;
                                 const axisMin = useRightAxis ? rightYMin : yMin;
 
