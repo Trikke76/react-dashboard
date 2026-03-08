@@ -145,20 +145,22 @@ $page->show();
         background: transparent;
         padding: 0;
         min-width: 0;
-        flex: 1 1 auto;
+        width: 100%;
     }
 
     .dashboard-main {
-        display: flex;
-        align-items: stretch;
-        gap: 10px;
+        position: relative;
     }
 
     .dashboard-editor-dock {
+        position: absolute;
+        right: 0;
+        top: 0;
+        bottom: 0;
         display: flex;
         align-items: stretch;
-        flex: 0 0 auto;
-        min-width: 0;
+        z-index: 60;
+        pointer-events: none;
     }
 
     .dashboard-editor-toggle {
@@ -176,6 +178,7 @@ $page->show();
         align-items: center;
         justify-content: center;
         padding: 0;
+        pointer-events: auto;
     }
 
     .dashboard-editor-toggle:hover {
@@ -192,6 +195,7 @@ $page->show();
         flex-direction: column;
         overflow: hidden;
         transition: width 160ms ease, min-width 160ms ease, opacity 120ms ease, border-color 120ms ease;
+        pointer-events: auto;
     }
 
     .dashboard-editor-dock.is-collapsed .dashboard-editor-toggle {
@@ -1598,10 +1602,13 @@ $page->show();
         .editor-dataset-grid { grid-template-columns: 1fr; }
         .timestate-row { grid-template-columns: 1fr; gap: 4px; }
         .dashboard-main {
+            display: flex;
             flex-direction: column;
         }
         .dashboard-editor-dock {
+            position: static;
             width: 100%;
+            pointer-events: auto;
         }
         .dashboard-editor-toggle {
             width: 100%;
